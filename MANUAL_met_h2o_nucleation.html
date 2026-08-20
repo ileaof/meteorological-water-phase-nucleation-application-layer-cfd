@@ -206,8 +206,8 @@
   <p class="eyebrow">First run</p>
   <h2>Quick start</h2>
   <p>Validate the environment and prove the core is untouched, then run the canonical reference point:</p>
-  <div class="cmd">python met_h2o_nucleation/met_h2o_nucleation.py --validate</div>
-  <div class="cmd">python met_h2o_nucleation/met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both</div>
+  <div class="cmd">python met_h2o_nucleation.py --validate</div>
+  <div class="cmd">python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both</div>
   <p>The CLI prints the full 48-field report per phase. Add <code>--json report.json</code> to capture it verbatim.</p>
 </section>
 
@@ -316,7 +316,7 @@
 <section id="cli">
   <p class="eyebrow">Command line</p>
   <h2>Command-line flags</h2>
-  <div class="cmd">python met_h2o_nucleation/met_h2o_nucleation.py [--validate] [--T K] [--P Pa] [--RH %] [--p-v Pa]
+  <div class="cmd">python met_h2o_nucleation.py [--validate] [--T K] [--P Pa] [--RH %] [--p-v Pa]
         [--phase-mode auto|liquid|ice|both] [--mode homogeneous|heterogeneous]
         [--theta DEG] [--r-ref m] [--gradT K/m] [--w m/s] [--LWC kg/m3] [--IWC kg/m3]
         [--dt s] [--Vcell m3] [--outdir DIR] [--json PATH]</div>
@@ -368,7 +368,7 @@
     <p class="eyebrow">Case 1</p>
     <h3>Both phases, supersaturated, with dynamics + expected events</h3>
     <p class="purpose">The canonical reference point: 260 K, 700 hPa, 110 % RH over water, a modest updraft, supercooled LWC/IWC, and a timestep × cell volume so <code>expected_events</code> is determined.</p>
-    <div class="cmd">python met_h2o_nucleation/met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --Vcell 1e6 --summary</div>
+    <div class="cmd">python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --Vcell 1e6 --summary</div>
     <div class="term-bar">terminal</div>
     <div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class       | exp_events</span>
   liquid | <span class="ok">ok</span>     | 1.10 | 1.25 | 74.33 | 5.11e-06 | 53.10  | liquid   | 0.600 | 0.607 | 0.555 | 0.386 | mixed_phase | 7.61e+60
@@ -380,7 +380,7 @@
     <p class="eyebrow">Case 2</p>
     <h3>Auto phase mode (dominant phase reported)</h3>
     <p class="purpose">Same state, but <code>--phase-mode auto</code>: both admissible phases are computed and the kinetically dominant one is reported. Without <code>--dt/--Vcell</code>, <code>expected_events</code> is "undetermined".</p>
-    <div class="cmd">python met_h2o_nucleation/met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode auto --summary</div>
+    <div class="cmd">python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode auto --summary</div>
     <div class="term-bar">terminal</div>
     <div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class       | exp_events</span>
   liquid | <span class="ok">ok</span>     | 1.10 | 1.25 | 74.33 | 5.11e-06 | 53.10  | liquid   | 0.750 | 0.776 | 0.776 | 0.664 | mixed_phase | undetermined
@@ -392,7 +392,7 @@
     <p class="eyebrow">Case 3</p>
     <h3>Ice-only, RH = 130 %</h3>
     <p class="purpose">Force the ice phase and drive it hard against the sublimation curve (S_i = 1.51). Useful for cirrus / ice-cloud regimes.</p>
-    <div class="cmd">python met_h2o_nucleation/met_h2o_nucleation.py --T 258.15 --P 70000 --RH 130 --phase-mode ice --summary</div>
+    <div class="cmd">python met_h2o_nucleation.py --T 258.15 --P 70000 --RH 130 --phase-mode ice --summary</div>
     <div class="term-bar">terminal</div>
     <div class="term"><span class="dim">  phase | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class       | exp_events</span>
   ice   | <span class="ok">ok</span>     | 1.30 | 1.51 | 147   | 4.20e-06 | 49.08  | ice      | 1.000 | 0.792 | 0.792 | 0.687 | mixed_phase | undetermined</div>
@@ -403,7 +403,7 @@
     <p class="eyebrow">Case 4</p>
     <h3>Heterogeneous nucleation, θ solved by Ferreira Eq. 17</h3>
     <p class="purpose">Switch to heterogeneous mode. The nucleation angle θ is no longer fixed: the core solves it self-consistently from Eq. 17 (<code>r_C,Het/r_C,Hom</code>) and reports it as <code>contact_angle_deg</code>. Compare log₁₀I against Case 2 (homogeneous).</p>
-    <div class="cmd">python met_h2o_nucleation/met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --mode heterogeneous --theta 60 --summary</div>
+    <div class="cmd">python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --mode heterogeneous --theta 60 --summary</div>
     <div class="term-bar">terminal</div>
     <div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class       | exp_events</span>
   liquid | <span class="ok">ok</span>     | 1.10 | 1.25 | 74.33 | 5.11e-06 | 50.93  | liquid   | 0.750 | 0.776 | 0.776 | 0.664 | mixed_phase | undetermined
@@ -415,7 +415,7 @@
     <p class="eyebrow">Case 5</p>
     <h3>Prescribed thermal gradient (∇T = 1e3 K/m)</h3>
     <p class="purpose">Override the closure: prescribe the gradient instead of Brent-solving it. A steeper gradient shrinks the continuation radius and shifts the local state.</p>
-    <div class="cmd">python met_h2o_nucleation/met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --gradT 1e3 --summary</div>
+    <div class="cmd">python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --gradT 1e3 --summary</div>
     <div class="term-bar">terminal</div>
     <div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class       | exp_events</span>
   liquid | <span class="ok">ok</span>     | 1.10 | 1.25 | 1101  | 1.34e-06 | 51.94  | liquid   | 0.750 | 0.776 | 0.776 | 0.664 | mixed_phase | undetermined
@@ -427,7 +427,7 @@
     <p class="eyebrow">Case 6</p>
     <h3>Subsaturated state (no nucleation)</h3>
     <p class="purpose">At 80 % RH both phases are subsaturated. In <code>auto</code> mode the tool must not fabricate a rate: it returns status = subsaturated, NaN nucleation fields, and dominant = none.</p>
-    <div class="cmd">python met_h2o_nucleation/met_h2o_nucleation.py --T 258.15 --P 70000 --RH 80 --phase-mode auto --summary</div>
+    <div class="cmd">python met_h2o_nucleation.py --T 258.15 --P 70000 --RH 80 --phase-mode auto --summary</div>
     <div class="term-bar">terminal</div>
     <div class="term"><span class="dim">  phase  | status       | S_w  | S_i  | gradT  | rC2nd  | log10I | dominant | rain  | snow  | graup | hail  | class        | exp_events</span>
   liquid | <span class="bad">subsaturated</span> | 0.80 | 0.93 | undet. | undet. | undet. | none     | 0.000 | 0.125 | 0.125 | 0.188 | subsaturated | undetermined
@@ -439,7 +439,7 @@
     <p class="eyebrow">Case 7</p>
     <h3>Vapour partial pressure directly (p_v = 500 Pa)</h3>
     <p class="purpose">Skip RH and supply the vapour partial pressure directly. At 260 K this is strongly supersaturated wrt both phases (S_w = 2.25).</p>
-    <div class="cmd">python met_h2o_nucleation/met_h2o_nucleation.py --T 260 --P 70000 --p-v 500 --phase-mode both --summary</div>
+    <div class="cmd">python met_h2o_nucleation.py --T 260 --P 70000 --p-v 500 --phase-mode both --summary</div>
     <div class="term-bar">terminal</div>
     <div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class       | exp_events</span>
   liquid | <span class="ok">ok</span>     | 2.25 | 2.55 | 74.33 | 5.11e-06 | 53.10  | liquid   | 1.000 | 0.776 | 0.776 | 0.664 | mixed_phase | undetermined
@@ -451,7 +451,7 @@
     <p class="eyebrow">Case 8</p>
     <h3>Warm regime (T = 285 K, RH = 102 %)</h3>
     <p class="purpose">Above freezing: liquid is slightly supersaturated, ice is sub-saturated (S_i = 0.91). The diagnostic class flips to condensation_favorable and the cold-type indices collapse.</p>
-    <div class="cmd">python met_h2o_nucleation/met_h2o_nucleation.py --T 285 --P 90000 --RH 102 --phase-mode both --w 1.0 --LWC 3e-4 --dt 60 --Vcell 1e6 --summary</div>
+    <div class="cmd">python met_h2o_nucleation.py --T 285 --P 90000 --RH 102 --phase-mode both --w 1.0 --LWC 3e-4 --dt 60 --Vcell 1e6 --summary</div>
     <div class="term-bar">terminal</div>
     <div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class                  | exp_events</span>
   liquid | <span class="ok">ok</span>     | 1.02 | 0.91 | 79.62 | 5.11e-06 | 53.06  | liquid   | 0.400 | 0.333 | 0.300 | 0.325 | condensation_favorable | 6.96e+60
@@ -463,7 +463,7 @@
     <p class="eyebrow">Case 9</p>
     <h3>Self-validation (--validate)</h3>
     <p class="purpose">Run the core validation suite [1]&ndash;[21] (proving the guarded core is untouched) plus the met-layer self-checks (free-energy identity, runner end-to-end). Exits 0 on success, 1 on any failure.</p>
-    <div class="cmd">python met_h2o_nucleation/met_h2o_nucleation.py --validate</div>
+    <div class="cmd">python met_h2o_nucleation.py --validate</div>
     <div class="term-bar">terminal</div>
     <div class="term"><span class="dim">==============================================================================</span>
 SELF-CHECKS  met_h2o_nucleation.py
@@ -480,7 +480,7 @@ SELF-CHECKS <span class="ok">PASS</span></div>
     <p class="eyebrow">Case 10</p>
     <h3>Warm-moist &times; cold-dry air-mass collision (frontal mixing cloud)</h3>
     <p class="purpose">A warm, moist air mass (T = 293.15 K, RH = 95 %) collides with a cold, dry one (T = 268.15 K, RH = 40 %) at a near-surface front (P = 900 hPa). Neither parent is saturated, yet isobaric mixing (mix T and p_v linearly &mdash; the Rogers&ndash;Yau mixing-cloud construction) yields a supersaturated parcel: scanning the warm-air mass fraction f, S_water peaks at f = 0.50 &rArr; T = 280.75 K, p_v = 1203.69 Pa, S_water = 1.153. That mixed state <em>is</em> the frontal cloud. <code>example_met_frontal_collision.py</code> builds it (re-using the core SaturationProperties correlations) and diagnoses it; the CLI below runs the mixed state directly, with a modest updraft over the cold wedge.</p>
-    <div class="cmd">python met_h2o_nucleation/met_h2o_nucleation.py --T 280.75 --P 90000 --p-v 1203.69 --phase-mode both --w 1.5 --LWC 5e-4 --dt 60 --Vcell 1e6 --summary</div>
+    <div class="cmd">python met_h2o_nucleation.py --T 280.75 --P 90000 --p-v 1203.69 --phase-mode both --w 1.5 --LWC 5e-4 --dt 60 --Vcell 1e6 --summary</div>
     <div class="term-bar">terminal</div>
     <div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class     | exp_events</span>
   liquid | <span class="ok">ok</span>     | 1.15 | 1.07 | 78.71 | 5.11e-06 | 53.05  | liquid   | 0.641 | 0.452 | 0.431 | 0.375 | warm_rain | 6.79e+60
@@ -500,11 +500,11 @@ SELF-CHECKS <span class="ok">PASS</span></div>
     <tr><td><code>example_met_figures.py</code></td><td>full figure suite (∇T and T sweeps)</td><td>peq_shift_surface_*, gt_and_radii_*, free_energy_vs_r, rates_vs_T, vertical_profile, favorability_bars</td></tr>
     <tr><td><code>example_met_frontal_collision.py</code></td><td>warm-moist &times; cold-dry collision &rarr; mixing to the supersaturated frontal-cloud state (Case 10)</td><td>frontal_collision_report.{json,csv}</td></tr>
   </table></div>
-  <div class="cmd">python met_h2o_nucleation/example_met_single_state.py
-python met_h2o_nucleation/example_met_vertical_profile.py
-python met_h2o_nucleation/example_met_xarray_netcdf.py
-python met_h2o_nucleation/example_met_figures.py
-python met_h2o_nucleation/example_met_frontal_collision.py</div>
+  <div class="cmd">python example_met_single_state.py
+python example_met_vertical_profile.py
+python example_met_xarray_netcdf.py
+python example_met_figures.py
+python example_met_frontal_collision.py</div>
 </section>
 
 <section id="conventions">
@@ -538,6 +538,7 @@ python met_h2o_nucleation/example_met_frontal_collision.py</div>
   <div class="tbl"><table>
     <tr><th>Path</th><th>Role</th></tr>
     <tr><td><code>met_h2o_nucleation/met_h2o_nucleation.py</code></td><td>the module (application/diagnosis layer)</td></tr>
+    <tr><td><code>met_h2o_nucleation/het_contact_angle.py</code></td><td>heterogeneous contact-angle models (sibling module)</td></tr>
     <tr><td><code>met_h2o_nucleation/test_met_nucleation.py</code></td><td>24-test validation suite</td></tr>
     <tr><td><code>met_h2o_nucleation/example_met_*.py</code></td><td>single-state, vertical-profile, xarray/NetCDF, figures, frontal collision</td></tr>
     <tr><td><code>met_h2o_nucleation/MET_NUCLEATION_HYPOTHESES.md</code></td><td>hypotheses / limitations / validity table</td></tr>

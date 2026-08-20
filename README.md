@@ -97,12 +97,12 @@ repo root and is **never modified** (SHA-256 guarded).
 ```bash
 # one state, both phases, supersaturated, with dynamics + a JSON dump
 # (run from the repo root; the module lives in the met_h2o_nucleation/ folder)
-python met_h2o_nucleation/met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both \
+python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both \
         --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --Vcell 1e6 \
         --json met_h2o_nucleation/out_met_nucleation/cli_report.json
 
 # prove the core is untouched and the met-layer self-checks pass
-python met_h2o_nucleation/met_h2o_nucleation.py --validate
+python met_h2o_nucleation.py --validate
 ```
 
 The CLI prints the full 48-field report for each admissible phase. See §10 for
@@ -520,13 +520,13 @@ M.run_self_checks(verbose=True)   # -> bool
 # 3) runner end-to-end at one point (favourability in [0,1], confidence in [0,1]).
 ```
 
-Or from the CLI: `python met_h2o_nucleation/met_h2o_nucleation.py --validate`.
+Or from the CLI: `python met_h2o_nucleation.py --validate`.
 
 The full 24-test suite (20 mandatory + 4 bonus, each labelled
 math / num / ref / reg) lives in **`test_met_nucleation.py`**:
 
 ```bash
-python met_h2o_nucleation/test_met_nucleation.py
+python test_met_nucleation.py
 ```
 
 ---
@@ -534,7 +534,7 @@ python met_h2o_nucleation/test_met_nucleation.py
 ## 14. Command-line reference
 
 ```
-python met_h2o_nucleation/met_h2o_nucleation.py [--validate]
+python met_h2o_nucleation.py [--validate]
         [--T K] [--P Pa] [--RH %] [--p-v Pa]
         [--phase-mode auto|liquid|ice|both]
         [--mode homogeneous|heterogeneous]
@@ -614,7 +614,7 @@ updraft, supercooled LWC/IWC, and a timestep × cell volume so `expected_events`
 is determined.
 
 ```bash
-python met_h2o_nucleation/met_h2o_nucleation.py --T 260 --P 70000 --RH 110 \
+python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 \
         --phase-mode both --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --Vcell 1e6 --summary
 ```
 
@@ -636,7 +636,7 @@ kinetically dominant one is reported. Without `--dt/--Vcell`, `expected_events`
 is `"undetermined"`.
 
 ```bash
-python met_h2o_nucleation/met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode auto --summary
+python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode auto --summary
 ```
 
 ```text
@@ -655,7 +655,7 @@ Force the ice phase and drive it hard against the sublimation curve (S_i = 1.51)
 Useful for cirrus / ice-cloud regimes.
 
 ```bash
-python met_h2o_nucleation/met_h2o_nucleation.py --T 258.15 --P 70000 --RH 130 --phase-mode ice --summary
+python met_h2o_nucleation.py --T 258.15 --P 70000 --RH 130 --phase-mode ice --summary
 ```
 
 ```text
@@ -674,7 +674,7 @@ solves it self-consistently from Eq. 17 (`r_C,Het/r_C,Hom`) and reports it as
 `contact_angle_deg`. Compare log₁₀I against Case 2 (homogeneous).
 
 ```bash
-python met_h2o_nucleation/met_h2o_nucleation.py --T 260 --P 70000 --RH 110 \
+python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 \
         --phase-mode both --mode heterogeneous --theta 60 --summary
 ```
 
@@ -699,7 +699,7 @@ Override the closure: prescribe the gradient instead of Brent-solving it. A
 steeper gradient shrinks the continuation radius and shifts the local state.
 
 ```bash
-python met_h2o_nucleation/met_h2o_nucleation.py --T 260 --P 70000 --RH 110 \
+python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 \
         --phase-mode both --gradT 1e3 --summary
 ```
 
@@ -720,7 +720,7 @@ fabricate a rate: it returns `status = subsaturated`, NaN nucleation fields, and
 `dominant = none`.
 
 ```bash
-python met_h2o_nucleation/met_h2o_nucleation.py --T 258.15 --P 70000 --RH 80 --phase-mode auto --summary
+python met_h2o_nucleation.py --T 258.15 --P 70000 --RH 80 --phase-mode auto --summary
 ```
 
 ```text
@@ -741,7 +741,7 @@ Skip RH and supply the vapour partial pressure directly. At 260 K this is
 strongly supersaturated wrt both phases (S_w = 2.25).
 
 ```bash
-python met_h2o_nucleation/met_h2o_nucleation.py --T 260 --P 70000 --p-v 500 --phase-mode both --summary
+python met_h2o_nucleation.py --T 260 --P 70000 --p-v 500 --phase-mode both --summary
 ```
 
 ```text
@@ -761,7 +761,7 @@ Above freezing: liquid is slightly supersaturated, ice is *sub* saturated
 cold-type indices collapse.
 
 ```bash
-python met_h2o_nucleation/met_h2o_nucleation.py --T 285 --P 90000 --RH 102 \
+python met_h2o_nucleation.py --T 285 --P 90000 --RH 102 \
         --phase-mode both --w 1.0 --LWC 3e-4 --dt 60 --Vcell 1e6 --summary
 ```
 
@@ -783,7 +783,7 @@ plus the met-layer self-checks (free-energy identity, runner end-to-end). Exits
 0 on success, 1 on any failure.
 
 ```bash
-python met_h2o_nucleation/met_h2o_nucleation.py --validate
+python met_h2o_nucleation.py --validate
 ```
 
 ```text
@@ -813,7 +813,7 @@ mixed state *is* the frontal cloud; `example_met_frontal_collision.py` builds it
 the mixed state to the CLI with a modest updraft over the cold wedge:
 
 ```bash
-python met_h2o_nucleation/met_h2o_nucleation.py --T 280.75 --P 90000 --p-v 1203.69 \
+python met_h2o_nucleation.py --T 280.75 --P 90000 --p-v 1203.69 \
         --phase-mode both --w 1.5 --LWC 5e-4 --dt 60 --Vcell 1e6 --summary
 ```
 
@@ -848,11 +848,11 @@ python met_h2o_nucleation/met_h2o_nucleation.py --T 280.75 --P 90000 --p-v 1203.
 
 ```bash
 # run from the repo root (examples auto-write into met_h2o_nucleation/out_met_nucleation/)
-python met_h2o_nucleation/example_met_single_state.py
-python met_h2o_nucleation/example_met_vertical_profile.py
-python met_h2o_nucleation/example_met_xarray_netcdf.py
-python met_h2o_nucleation/example_met_figures.py
-python met_h2o_nucleation/example_met_frontal_collision.py
+python example_met_single_state.py
+python example_met_vertical_profile.py
+python example_met_xarray_netcdf.py
+python example_met_figures.py
+python example_met_frontal_collision.py
 ```
 
 ---
@@ -910,6 +910,7 @@ the microphysical timestep + cell volume.
 ```
 met_h2o_nucleation/                <-- this module (application/diagnosis layer)
     met_h2o_nucleation.py            the module
+    het_contact_angle.py             heterogeneous contact-angle models (sibling module)
     test_met_nucleation.py           24-test validation suite
     example_met_single_state.py      single-state example
     example_met_vertical_profile.py  vertical-profile example

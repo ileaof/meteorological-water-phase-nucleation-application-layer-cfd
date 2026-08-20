@@ -475,6 +475,18 @@ SELF-CHECKS  met_h2o_nucleation.py
 SELF-CHECKS <span class="ok">PASS</span></div>
     <p class="note"><span class="nb">Read</span>The full 24-test suite (test_met_nucleation.py) is the comprehensive check; --validate is the lightweight in-process gate. Both pass in the current build. The core SHA-256 guard (test 18) is the proof that this application layer has not modified the validated core.</p>
   </article>
+
+  <article class="scn" id="c10">
+    <p class="eyebrow">Case 10</p>
+    <h3>Warm-moist &times; cold-dry air-mass collision (frontal mixing cloud)</h3>
+    <p class="purpose">A warm, moist air mass (T = 293.15 K, RH = 95 %) collides with a cold, dry one (T = 268.15 K, RH = 40 %) at a near-surface front (P = 900 hPa). Neither parent is saturated, yet isobaric mixing (mix T and p_v linearly &mdash; the Rogers&ndash;Yau mixing-cloud construction) yields a supersaturated parcel: scanning the warm-air mass fraction f, S_water peaks at f = 0.50 &rArr; T = 280.75 K, p_v = 1203.69 Pa, S_water = 1.153. That mixed state <em>is</em> the frontal cloud. <code>example_met_frontal_collision.py</code> builds it (re-using the core SaturationProperties correlations) and diagnoses it; the CLI below runs the mixed state directly, with a modest updraft over the cold wedge.</p>
+    <div class="cmd">python met_h2o_nucleation/met_h2o_nucleation.py --T 280.75 --P 90000 --p-v 1203.69 --phase-mode both --w 1.5 --LWC 5e-4 --dt 60 --Vcell 1e6 --summary</div>
+    <div class="term-bar">terminal</div>
+    <div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class     | exp_events</span>
+  liquid | <span class="ok">ok</span>     | 1.15 | 1.07 | 78.71 | 5.11e-06 | 53.05  | liquid   | 0.641 | 0.452 | 0.431 | 0.375 | warm_rain | 6.79e+60
+  ice    | <span class="ok">ok</span>     | 1.15 | 1.07 | 160.8 | 4.20e-06 | 49.10  | liquid   | 0.641 | 0.452 | 0.431 | 0.375 | warm_rain | 7.63e+56</div>
+    <p class="note"><span class="nb">Read</span>The collision is not itself a tool input &mdash; it is encoded as the mixed parcel it produces. Both parents were subsaturated (RH 95 % and 40 %), yet the mixture reaches S_water = 1.15 because P_sat,w(T) is convex and the straight mixing line bulges above it: this is mixing fog / frontal cloud. T = 280.75 K &gt; 273.15 K, so the class is warm_rain and liquid dominates (log10I 53.05 vs 49.10 for ice); &nabla;T is solved by the thermal closure (78.7 K/m liquid). The peak-supersaturation mixture is warm &mdash; for a supercooled / mixed-phase ice case pick a colder mixture (larger cold-air fraction, T &lt; 273 K) from the same T_mix/S_mix scan the script computes. Do not map the synoptic front's &nabla;T onto <code>--gradT</code>: that field is the local interface gradient (validated 1&ndash;1e4 K/m), not the ~1e-3 K/m synoptic gradient.</p>
+  </article>
 </section>
 
 <section id="examples">
@@ -486,11 +498,13 @@ SELF-CHECKS <span class="ok">PASS</span></div>
     <tr><td><code>example_met_vertical_profile.py</code></td><td>idealised mid-latitude ascent; subsaturated levels handled</td><td>vertical_profile.{csv,json,png}</td></tr>
     <tr><td><code>example_met_xarray_netcdf.py</code></td><td>xarray field → NetCDF3 (scipy) round-trip → per-level reports</td><td>xarray_report.{json,csv,nc}</td></tr>
     <tr><td><code>example_met_figures.py</code></td><td>full figure suite (∇T and T sweeps)</td><td>peq_shift_surface_*, gt_and_radii_*, free_energy_vs_r, rates_vs_T, vertical_profile, favorability_bars</td></tr>
+    <tr><td><code>example_met_frontal_collision.py</code></td><td>warm-moist &times; cold-dry collision &rarr; mixing to the supersaturated frontal-cloud state (Case 10)</td><td>frontal_collision_report.{json,csv}</td></tr>
   </table></div>
   <div class="cmd">python met_h2o_nucleation/example_met_single_state.py
 python met_h2o_nucleation/example_met_vertical_profile.py
 python met_h2o_nucleation/example_met_xarray_netcdf.py
-python met_h2o_nucleation/example_met_figures.py</div>
+python met_h2o_nucleation/example_met_figures.py
+python met_h2o_nucleation/example_met_frontal_collision.py</div>
 </section>
 
 <section id="conventions">
@@ -525,7 +539,7 @@ python met_h2o_nucleation/example_met_figures.py</div>
     <tr><th>Path</th><th>Role</th></tr>
     <tr><td><code>met_h2o_nucleation/met_h2o_nucleation.py</code></td><td>the module (application/diagnosis layer)</td></tr>
     <tr><td><code>met_h2o_nucleation/test_met_nucleation.py</code></td><td>24-test validation suite</td></tr>
-    <tr><td><code>met_h2o_nucleation/example_met_*.py</code></td><td>single-state, vertical-profile, xarray/NetCDF, figures</td></tr>
+    <tr><td><code>met_h2o_nucleation/example_met_*.py</code></td><td>single-state, vertical-profile, xarray/NetCDF, figures, frontal collision</td></tr>
     <tr><td><code>met_h2o_nucleation/MET_NUCLEATION_HYPOTHESES.md</code></td><td>hypotheses / limitations / validity table</td></tr>
     <tr><td><code>met_h2o_nucleation/MANUAL_met_h2o_nucleation.md</code></td><td>this manual (Markdown source)</td></tr>
     <tr><td><code>met_h2o_nucleation/MANUAL_met_h2o_nucleation.html</code></td><td>this manual (rendered)</td></tr>

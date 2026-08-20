@@ -801,6 +801,39 @@ SELF-CHECKS PASS
 > pass in the current build. The core SHA-256 guard (test 18) is the proof that
 > this application layer has not modified the validated core.
 
+**Case 10 — warm-moist × cold-dry air-mass collision (frontal mixing cloud).**
+A warm, moist air mass (T = 293.15 K, RH = 95 %) collides with a cold, dry one
+(T = 268.15 K, RH = 40 %) at a near-surface front (P = 900 hPa). Neither parent
+is saturated, yet **isobaric mixing** yields a supersaturated parcel: mixing
+temperature and vapour pressure linearly (the Rogers–Yau mixing-cloud
+construction) and scanning the warm-air mass fraction *f*, the supersaturation
+peaks at *f* = 0.50 → T = 280.75 K, p_v = 1203.69 Pa, **S_water = 1.153**. That
+mixed state *is* the frontal cloud; `example_met_frontal_collision.py` builds it
+(re-using the core `SaturationProperties` correlations) and diagnoses it. Feeding
+the mixed state to the CLI with a modest updraft over the cold wedge:
+
+```bash
+python met_h2o_nucleation/met_h2o_nucleation.py --T 280.75 --P 90000 --p-v 1203.69 \
+        --phase-mode both --w 1.5 --LWC 5e-4 --dt 60 --Vcell 1e6 --summary
+```
+
+```text
+  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | theta_deg | dominant | rain  | snow  | graup | hail  | class     | theta_model   | exp_events
+  liquid | ok     | 1.15 | 1.07 | 78.71 | 5.11e-06 | 53.05  | 90.04     | liquid   | 0.641 | 0.452 | 0.431 | 0.375 | warm_rain | ferreira_eq17 | 6.79e+60
+  ice    | ok     | 1.15 | 1.07 | 160.8 | 4.20e-06 | 49.10  | 90.03     | liquid   | 0.641 | 0.452 | 0.431 | 0.375 | warm_rain | ferreira_eq17 | 7.63e+56
+```
+> **Read.** The collision is not itself a tool input — it is encoded as the
+> *mixed parcel* it produces. Both parents were subsaturated (RH 95 % and 40 %),
+> yet the mixture reaches S_water = 1.15 because e_sat(T) is convex and the
+> straight mixing line bulges above it: this is mixing fog / frontal cloud.
+> T = 280.75 K > 273.15 K, so the class is `warm_rain` and liquid dominates
+> (log₁₀I 53.05 vs 49.10 for ice); ∇T is solved by the thermal closure
+> (78.7 K/m liquid). Note the peak-supersaturation mixture is *warm* — for a
+> supercooled / mixed-phase ice case pick a colder mixture (larger cold-air
+> fraction, T < 273 K) from the same `T_mix`/`S_mix` scan the script computes.
+> Do **not** map the synoptic front's ∇T onto `--gradT`: that field is the local
+> interface gradient (validated 1–10⁴ K/m), not the ~10⁻³ K/m synoptic gradient.
+
 ---
 
 ## 15. Examples
@@ -811,6 +844,7 @@ SELF-CHECKS PASS
 | `example_met_vertical_profile.py` | 20-level hydrostatic profile → per-level reports, CSV + `vertical_profile.png` + JSON; subsaturated levels handled |
 | `example_met_xarray_netcdf.py` | build an `xarray.Dataset`, NetCDF3 round-trip (scipy engine), per-level reports, structured xarray/NetCDF output |
 | `example_met_figures.py` | the full figure suite (P_eq,shift surface, Γ & r_C vs ∇T, ΔG vs r, rates vs T, vertical profile, favourability bars) |
+| `example_met_frontal_collision.py` | warm-moist × cold-dry air-mass collision → isobaric mixing to the supersaturated frontal-cloud state → both-phase nucleation report + JSON/CSV (see Case 10) |
 
 ```bash
 # run from the repo root (examples auto-write into met_h2o_nucleation/out_met_nucleation/)
@@ -818,6 +852,7 @@ python met_h2o_nucleation/example_met_single_state.py
 python met_h2o_nucleation/example_met_vertical_profile.py
 python met_h2o_nucleation/example_met_xarray_netcdf.py
 python met_h2o_nucleation/example_met_figures.py
+python met_h2o_nucleation/example_met_frontal_collision.py
 ```
 
 ---
@@ -880,6 +915,7 @@ met_h2o_nucleation/                <-- this module (application/diagnosis layer)
     example_met_vertical_profile.py  vertical-profile example
     example_met_xarray_netcdf.py     xarray/NetCDF round-trip example
     example_met_figures.py           full figure suite
+    example_met_frontal_collision.py warm-moist x cold-dry collision (Case 10)
     MET_NUCLEATION_HYPOTHESES.md     hypotheses, validity, validation report
     MANUAL_met_h2o_nucleation.md     this manual (Markdown source)
     MANUAL_met_h2o_nucleation.html   this manual (HTML)

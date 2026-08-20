@@ -1,0 +1,23 @@
+# Runtime dependencies for met_h2o_nucleation.py (application / diagnosis layer).
+#
+# Only NumPy is strictly required for the core diagnostics. Everything else is
+# imported lazily and only when the corresponding feature is used, so you can
+# install a minimal or a full environment depending on your needs.
+
+# --- Required -------------------------------------------------------------
+numpy>=1.20
+
+# --- Optional (recommended for the full feature set) ----------------------
+# scipy    : Brent root-finding for the thermal closure, NetCDF3 engine
+# matplotlib : figure generation (Plots / example_met_figures.py)
+# xarray   : NetCDF ingestion & report export (example_met_xarray_netcdf.py)
+# netCDF4  : NetCDF4 backend for xarray
+scipy
+matplotlib
+xarray
+netCDF4
+
+# --- Optional (GRIB ingestion) --------------------------------------------
+# Uncomment to enable reading GRIB fields via xarray's cfgrib backend.
+# cfgrib
+# eccodes

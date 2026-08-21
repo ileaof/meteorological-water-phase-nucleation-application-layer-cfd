@@ -220,6 +220,12 @@
     <li><a href="#s25">25 · Running it</a></li>
     <li><a href="#s26">26 · Outputs &amp; the gate</a></li>
   </ol>
+  <h4>Part III · Precipitation</h4>
+  <div class="part-label">Bulk microphysics</div>
+  <ol>
+    <li><a href="#s27">27 · Precipitation microphysics</a></li>
+    <li><a href="#s28">28 · High precipitation &amp; hail</a></li>
+  </ol>
 </nav>
 
 <main class="doc">
@@ -1249,8 +1255,125 @@ them) — expected and documented, not a conservation failure.</p>
 <p class="note"><strong>Batch 2 (gated, next)</strong> — <code>phase_change.py</code>: vapour depletion
 (mass-conserving, <code>q_v ≥ 0</code>) + latent heat (condensation/deposition/freezing/melting signs) + buoyancy
 feedback; then hydrometeor transport + sedimentation; precip favorability diagnostics (labelled, not prediction);
-optional LES/Smagorinsky toward operational microphysics. The gate is passed; Batch 2 is the approved next step,
-not yet started.</p>
+optional LES/Smagorinsky toward operational microphysics. The gate is passed; the two-way microphysics is now
+delivered as the standalone <code>precip_microphysics</code> package (<strong>Part III</strong>), with the 3D
+flow coupling as the remaining step.</p>
+</section>
+
+<div class="part">
+  <p class="pk">Part III</p>
+  <h2>The precipitation microphysics</h2>
+  <p class="psub">The <code>precip_microphysics</code> package adds the hydrometeor chain the nucleation layer
+  deliberately omits — droplet/ice activation, condensation/deposition growth, collision–coalescence, riming,
+  aggregation, freezing/melting, hail wet/dry growth and sedimentation — plus an <strong>evidence-based</strong>
+  confidence model that only <em>confirms</em> precipitation when the growth-and-survival evidence is actually
+  present. The validated nucleation core is imported read-only, exactly as the flow solver does.</p>
+</div>
+
+<section id="s27">
+<h2><span class="num">§27</span>Precipitation microphysics</h2>
+<p>A single-moment bulk scheme (prognostic mass mixing ratios <code>q_c,q_r,q_i,q_s,q_g,q_h</code>; Marshall-Palmer
+number closure) resolves the limitation <em>"a high nucleation rate never by itself implies rain or hail"</em> by
+implementing the physics and the evidence, <strong>not</strong> by relaxing thresholds. The per-cell pipeline:</p>
+<div class="arch">meteorological state (T, P, humidity, w, ...)
+  -&gt; second-order vapour-liquid / vapour-ice nucleation rate J        (validated kernel, read-only)
+  -&gt; embryo source (q_c / q_i)      N = J dV dt, CCN/IN-capped, vapour-limited
+  -&gt; bulk growth &amp; conversion       Kessler warm rain + Lin/Rutledge-Hobbs ice/graupel + hail wet/dry
+  -&gt; sedimentation &amp; surface flux
+  -&gt; evidence-based precipitation diagnostics</div>
+
+<h3>27.1 Diagnostic levels (0–4)</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>Level</th><th>Name</th><th>Criterion</th></tr></thead>
+<tbody>
+<tr><td>0</td><td><code>insufficient_information</code></td><td>no reliable assessment (outside validity, nothing supersaturated)</td></tr>
+<tr><td>1</td><td><code>thermodynamic_favourability</code></td><td>supersaturation / nucleation favourable, growth unresolved</td></tr>
+<tr><td>2</td><td><code>hydrometeor_production</code></td><td>category mass being generated aloft</td></tr>
+<tr><td>3</td><td><code>precipitation_development</code></td><td>enough mass and fall speed to precipitate</td></tr>
+<tr><td>4</td><td><code>surface_precipitation</code></td><td>positive category surface flux</td></tr>
+</tbody></table></div>
+
+<h3>27.2 Confidence &amp; confirmation</h3>
+<div class="eq">confidence = data_completeness × model_validity × process_evidence × numerical_quality</div>
+<p>Each factor is in [0,1]; <code>process_evidence</code> is the fraction of the required growth processes that were
+enabled <em>and contributed mass</em> — which is what makes nucleation-only evidence insufficient. A category is
+<strong>confirmed</strong> only at <strong>Level 4</strong>, with the <strong>full growth chain</strong>
+(<code>process_evidence = 1</code>), confidence at/above its threshold (0.50 rain/snow/graupel, 0.75 hail), and no
+hard blocking reason. So a high nucleation rate alone can reach Level 1 only. The category→evidence table, reason
+codes and output schema are in <code>docs/microphysics_guide.md</code>.</p>
+</section>
+
+<section id="s28">
+<h2><span class="num">§28</span>High-precipitation &amp; hail — running setup</h2>
+<p class="lead-in">A severe convective storm producing ~100 mm of rain and hail.</p>
+<p>A single closed air parcel cannot rain out 100 mm — that much water must be <strong>supplied</strong> by the
+storm's moisture convergence. <code>examples/heavy_rain_hail_scenario.py</code> therefore models a severe storm as
+two coupled cores (the standard conceptual model of a hailstorm): a <strong>warm heavy-rain core</strong>
+(cloud base ≈ 293 K) fed by continuous moisture convergence, and a <strong>cold supercell hail-growth core</strong>
+(a sustained supercooled-liquid reservoir + graupel embryos in a strong updraft) whose hail then descends through
+the 0 °C level, partly melts (adding to the rain) and the survivors reach the ground.</p>
+
+<h3>28.1 Run it</h3>
+<pre><code>python examples/heavy_rain_hail_scenario.py
+python examples/heavy_rain_hail_scenario.py --json outputs/storm.json   # full per-category diagnostics</code></pre>
+
+<h3>28.2 How the ~100 mm is set — the moisture supply</h3>
+<p>The physical ceiling on the supply is the updraft's vertical moisture flux, at precipitation efficiency ε:</p>
+<div class="eq">P_surface ≈ ε · ρ · w · q_v            S_max ≈ w · q_v / H ≈ 3×10⁻⁵ kg/kg/s  (mean updraft)</div>
+<p>For strong-storm values (ρ ≈ 1 kg/m³, mean w ≈ 10 m/s, q_v ≈ 0.016 kg/kg) the flux ρ·w·q_v ≈ 0.16 kg/m²/s gives
+P ≈ 115–290 mm/hr at the extreme, so ~100 mm/hr sits comfortably inside the envelope (flash-flood cells reach
+150–300 mm/hr). The warm core runs at a source <code>S ≈ 2.7×10⁻⁶ kg/kg/s</code>, well under <code>S_max</code>.
+Two documented steady-state assumptions keep the demonstration honest: the warm core is held <strong>isothermal</strong>
+(ascent cooling balances the condensation latent heating on the moist adiabat) and the hail core sustains a
+<strong>supercooled-liquid reservoir</strong> for a short growth window (the supercell recirculation a 0-D box
+cannot self-generate).</p>
+
+<h3>28.3 Verified output</h3>
+<div class="term-bar">terminal</div>
+<div class="term"><span class="dim">SEVERE CONVECTIVE STORM  --  heavy rain + hail
+================================================================
+component                   accum (mm)  level  confirmed
+----------------------------------------------------------------</span>
+rain (warm core)                  46.9      4       <span class="ok">True</span>
+rain (melted hail/graupel)        53.4      -          -
+hail (surface)                     1.7      4       <span class="ok">True</span>
+graupel (surface)                  4.1      -          -
+<span class="dim">----------------------------------------------------------------</span>
+TOTAL rain                       100.3
+TOTAL hail                         1.7
+TOTAL precipitation              106.1   (target ~100 mm)
+
+<span class="dim">Hail detail (supercell core):</span>
+    growth_regime                  dry_growth
+    max_diameter_m                 1.58e-03
+    melting_fraction               0.175
+    surface_survival_probability   0.825
+    max_updraft_m_s                45.0
+
+Rain diagnostic level : surface_precipitation  confidence=1.0  confirmed=<span class="ok">True</span>
+Hail diagnostic level : surface_precipitation  confidence=1.0  confirmed=<span class="ok">True</span>
+Water conservation    : rain core rel.err=4.3e-16, hail core rel.err=6.2e-16</div>
+<p class="note">Both <strong>rain and hail are confirmed at Level 4</strong> (surface
+precipitation, confidence 1.0), and water is conserved to ~1e-16 in each core. The warm-collision rain (46.9 mm)
+plus the rain from melted graupel/hail (53.4 mm) make up the ~100 mm total; a few mm of hail survive to the ground.</p>
+
+<h3>28.4 The two storm cores</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>Component</th><th>Accum (mm)</th><th>Level</th><th>Confirmed</th></tr></thead>
+<tbody>
+<tr><td>rain — warm coalescence core</td><td class="num">46.9</td><td>4</td><td>yes</td></tr>
+<tr><td>rain — melted graupel/hail</td><td class="num">53.4</td><td>—</td><td>—</td></tr>
+<tr><td>hail — surface</td><td class="num">1.7</td><td>4</td><td>yes</td></tr>
+<tr><td>graupel — surface</td><td class="num">4.1</td><td>—</td><td>—</td></tr>
+<tr><td><strong>TOTAL rain</strong></td><td class="num"><strong>100.3</strong></td><td>—</td><td>—</td></tr>
+<tr><td><strong>TOTAL hail</strong></td><td class="num"><strong>1.7</strong></td><td>—</td><td>—</td></tr>
+<tr><td><strong>TOTAL precipitation</strong></td><td class="num"><strong>106.1</strong></td><td>—</td><td>—</td></tr>
+</tbody></table></div>
+<p class="callout"><span class="ct">Physical honesty</span>The scheme reproduces the realistic ~1:40 hail:rain ratio
+at the ground: most of a hailstorm's water arrives as rain (warm-collision + melted graupel/hail), with only a few
+mm of actual hail surviving. Forcing 100 mm of <em>hail</em> specifically would demand ~4000 mm of rain, which is
+unphysical — so "≈100 mm of rain and hail" is delivered as ~100 mm rain plus a few mm of confirmed hail. The run is
+locked by <code>tests/test_heavy_scenario.py</code>.</p>
 </section>
 
 <footer>

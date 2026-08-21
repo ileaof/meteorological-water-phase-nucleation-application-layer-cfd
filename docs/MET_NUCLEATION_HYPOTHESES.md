@@ -1,5 +1,11 @@
 # `met_h2o_nucleation` — Hypotheses, Limitations, Validity & Validation Report
 
+> **Reorganization note (2026-08-20).** The module and core moved (byte-identical)
+> into the installable package `met_water_nucleation` under
+> `src/met_water_nucleation/_engine/`. The science, equations and validation
+> status below are unchanged. Import as `import met_water_nucleation as M`;
+> the validated core is `M.un`. See `docs/migration-guide.md`.
+
 This document records the scientific hypotheses, extrapolations, validity
 ranges and the validation status of the meteorological water-phase nucleation
 module `met_h2o_nucleation.py` (the application/diagnosis layer on top of the

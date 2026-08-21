@@ -25,10 +25,16 @@ try:
 except Exception:
     pass
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import met_h2o_nucleation as M
+# Bootstrap the package import when running from a source checkout without
+# `pip install -e .` (path resolved relative to this file, not to CWD).
+try:
+    import met_water_nucleation as M
+except ImportError:
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "src"))
+    import met_water_nucleation as M
 
-OUTDIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out_met_nucleation")
+OUTDIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "outputs", "vertical_profile")
 os.makedirs(OUTDIR, exist_ok=True)
 
 

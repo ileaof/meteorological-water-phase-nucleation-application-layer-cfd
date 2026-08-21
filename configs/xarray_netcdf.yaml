@@ -1,0 +1,19 @@
+# 6-level vertical field, NetCDF3 (scipy engine) round-trip.
+# Mirrors examples/xarray_netcdf.py.
+field:
+  z:   [800.0, 1500.0, 2500.0, 3500.0, 4500.0, 5500.0]   # m
+  T:   [279.0, 273.5, 267.0, 260.0, 253.0, 246.0]         # K
+  P:   [92000, 85000, 75000, 66000, 57000, 49000]         # Pa
+  p_v: [800.0, 600.0, 380.0, 220.0, 120.0, 60.0]          # Pa
+  w:   [0.5, 2.0, 3.0, 3.0, 1.5, 0.5]                     # m/s
+  LWC: [0.0, 3.0e-4, 6.0e-4, 6.0e-4, 2.0e-4, 0.0]         # kg/m^3
+  IWC: [0.0, 0.0, 1.0e-5, 1.0e-4, 3.0e-4, 2.0e-4]         # kg/m^3
+met_input:
+  phase_mode: both
+  dt_micro: 60.0
+  cell_volume: 1.0e6
+io:
+  engine_fallback: [netcdf4, h5netcdf, scipy]   # first available
+output:
+  outdir: outputs/xarray_netcdf
+  format: [json, csv, netcdf]

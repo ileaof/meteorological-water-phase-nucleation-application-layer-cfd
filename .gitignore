@@ -1,29 +1,55 @@
-# Python
+# --- Python ---
 __pycache__/
 *.py[cod]
 *.egg-info/
 .eggs/
 build/
 dist/
+*.egg
 
-# Virtual environments
+# --- Packaging / editable install artifacts ---
+.eggs/
+src/*.egg-info/
+
+# --- Virtual environments ---
 .venv/
 venv/
 env/
 
-# Tooling caches
+# --- Tooling caches ---
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .ipynb_checkpoints/
 
-# OS / editor
+# --- OS / editor ---
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
 
-# Bundled physics core: track ONLY the module file, not its generated
-# outputs (out_*/), caches, or its own docs that live beside it on disk.
-/unified_h2o_nucleation_climate/*
-!/unified_h2o_nucleation_climate/unified_h2o_nucleation_climate.py
+# --- Generated outputs ---
+# The committed flat reference outputs at outputs/*.{json,csv,nc,png} are kept
+# tracked as historical regression references (see outputs/README.md).  New
+# per-scenario run outputs follow the naming convention
+#   outputs/<scenario>/<run-id>/
+# and are ignored so regenerable results are never re-committed by accident.
+/outputs/*/
+!/outputs/.gitkeep
+
+# --- Bundled engine: track only source, not caches/outputs that may appear
+#     beside the core inside the package tree ---
+# The core's own ecosystem (its README.md, MANUAL_*.html and historical out_*
+# outputs) was relocated into the core's new folder alongside the core .py to
+# restore the original self-contained bundle. As in the original layout, the
+# author kept this collateral out of version control; we keep it untracked here.
+src/met_water_nucleation/_engine/unified_h2o_nucleation_climate/__pycache__/
+src/met_water_nucleation/_engine/**/out_*/
+src/met_water_nucleation/_engine/unified_h2o_nucleation_climate/README.md
+src/met_water_nucleation/_engine/unified_h2o_nucleation_climate/*.html
+src/met_water_nucleation/_engine/unified_h2o_nucleation_climate/unified_nucleation_out
+
+# --- Regenerated run outputs & logs (regenerable; keep out of version control) ---
+/out_met_nucleation/
+/outputs/cli_report.json
+*.log

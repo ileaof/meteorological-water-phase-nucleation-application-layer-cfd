@@ -1,0 +1,1275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Water-Phase Nucleation & Flow Manual</title>
+<style>
+  :root{
+    --ground:#F4F7FA; --surface:#EAEFF4; --surface-2:#DDE6EE;
+    --ink:#16242E; --ink-soft:#41525E; --ink-faint:#6B7C87;
+    --ink-2:var(--ink-soft); --ink-3:var(--ink-faint);
+    --rule:#C9D4DE; --rule-soft:#DCE4EC;
+    --liquid:#2E6F9E; --ice:#7A6FAE; --vapour:#39B6D4; --crit:#B4453B;
+    --term-bg:#0C141A; --term-ink:#DCE6EE; --term-dim:#7E92A0;
+    --accent:var(--liquid); --cold:var(--liquid); --warm:var(--crit);
+    --ok:#1E7A4C;
+    --code-bg:var(--surface); --warn-bg:#F6ECE1; --warn-rule:#C9A469;
+    --maxw:860px;
+    --serif:"Iowan Old Style","Palatino Linotype","Palatino",Georgia,"Times New Roman",serif;
+    --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --mono:"JetBrains Mono","SF Mono","Cascadia Code",Consolas,"Liberation Mono",monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ground:#0E151B; --surface:#16202A; --surface-2:#1E2A36;
+      --ink:#DCE6EE; --ink-soft:#A6B6C2; --ink-faint:#7E92A0;
+      --rule:#243240; --rule-soft:#1E2A36;
+      --liquid:#5FA8D6; --ice:#A99CD6; --vapour:#5BD0EA; --crit:#E07060;
+      --term-bg:#070D12; --term-ink:#DCE6EE; --term-dim:#5E7280;
+      --ok:#4ADE80; --warn-bg:#261A12; --warn-rule:#B9763A;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0E151B; --surface:#16202A; --surface-2:#1E2A36;
+    --ink:#DCE6EE; --ink-soft:#A6B6C2; --ink-faint:#7E92A0;
+    --rule:#243340; --rule-soft:#1E2A36;
+    --liquid:#5FA8D6; --ice:#A99CD6; --vapour:#5BD0EA; --crit:#E07060;
+    --term-bg:#070D12; --term-ink:#DCE6EE; --term-dim:#5E7280;
+    --ok:#4ADE80; --warn-bg:#261A12; --warn-rule:#B9763A;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:var(--sans); font-size:16.5px; line-height:1.62;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  a{color:var(--accent); text-decoration:none}
+  a:hover{text-decoration:underline}
+  h1,h2,h3,h4{font-family:var(--serif); font-weight:700; line-height:1.18; text-wrap:balance; letter-spacing:-.005em}
+  .mf{font-style:italic; color:var(--warm); font-family:var(--serif)}
+  code,.mono{font-family:var(--mono)}
+  strong{color:var(--ink)}
+
+  /* layout */
+  .shell{display:grid; grid-template-columns:240px minmax(0,1fr); gap:52px; max-width:1200px; margin:0 auto; padding:0 28px}
+  @media (max-width:960px){ .shell{grid-template-columns:1fr; gap:0} }
+
+  /* TOC */
+  .toc{position:sticky; top:0; align-self:start; max-height:100vh; overflow-y:auto;
+    padding:28px 0 34px; font-size:13px; line-height:1.5; color:var(--ink-soft)}
+  @media (max-width:960px){ .toc{position:static; max-height:none; padding:12px 0 8px; border-bottom:1px solid var(--rule)} }
+  .toc h4{font-family:var(--sans); font-size:10.5px; font-weight:600; letter-spacing:.11em;
+    text-transform:uppercase; color:var(--ink-faint); margin:20px 0 4px}
+  .toc h4:first-child{margin-top:0}
+  .toc .part-label{font-family:var(--serif); font-size:13.5px; font-weight:700; color:var(--ink); margin:0 0 8px; padding:0 10px}
+  .toc ol{list-style:none; padding:0; margin:0 0 6px}
+  .toc li{margin:2px 0}
+  .toc a{color:var(--ink-soft); display:block; padding:4px 10px; border-radius:3px; border-left:2px solid transparent; line-height:1.35}
+  .toc a:hover{background:var(--surface); color:var(--ink); text-decoration:none}
+  .toc a.active{color:var(--accent); border-left-color:var(--accent); background:var(--surface)}
+
+  /* main */
+  .doc{min-width:0; max-width:var(--maxw); padding:0 0 90px}
+  section{padding-top:34px; margin-top:16px; border-top:1px solid var(--rule-soft)}
+  .part + section{border-top:none; margin-top:0; padding-top:22px}
+  h2{font-size:27px; margin:0 0 8px; scroll-margin-top:1rem}
+  h2 .num{font-family:var(--mono); font-size:14px; font-weight:500; color:var(--accent); letter-spacing:0; margin-right:.5em; vertical-align:.02em}
+  h3{font-size:19px; margin:26px 0 4px; color:var(--ink); scroll-margin-top:1rem}
+  h4{font-size:15.5px; margin:20px 0 2px; font-family:var(--sans); font-weight:600; letter-spacing:.01em}
+  p{margin:10px 0}
+  ul,ol{padding-left:1.3em}
+  li{margin:3px 0}
+  code{font-size:.85em; background:var(--surface); padding:1px 5px; border-radius:4px; color:var(--ink)}
+
+  /* eyebrow */
+  .eyebrow{font-family:var(--sans); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 6px}
+
+  /* masthead / hero */
+  .masthead{padding:44px 0 4px}
+  h1.title{font-family:var(--serif); font-size:40px; margin:0 0 10px; letter-spacing:-.01em; line-height:1.1}
+  .lede{font-family:var(--serif); font-size:18px; color:var(--ink-soft); max-width:60ch; margin:.6rem 0 1rem; line-height:1.5}
+  .chips{display:flex; flex-wrap:wrap; gap:8px; margin:16px 0 6px}
+  .chip{font-family:var(--sans); font-size:12px; padding:5px 11px; border:1px solid var(--rule); border-radius:999px; color:var(--ink-soft); background:var(--surface)}
+  .chip.ok{border-color:var(--ok); color:var(--ok)}
+  .legend{display:flex; flex-wrap:wrap; gap:10px; margin:10px 0 4px}
+  .legend .chip{display:inline-flex; align-items:center; gap:7px}
+  .legend .chip i{width:9px; height:9px; border-radius:50%; display:inline-block}
+  .legend .l i{background:var(--liquid)} .legend .i i{background:var(--ice)}
+  .legend .v i{background:var(--vapour)} .legend .c i{background:var(--crit)}
+
+  .duo-rule{height:4px; border:none; border-radius:2px; margin:26px 0; background:linear-gradient(90deg,var(--warm),var(--cold))}
+  hr.divider{border:none; border-top:1px solid var(--rule-soft); margin:32px 0}
+
+  /* part dividers */
+  .part{margin:40px 0 8px; padding-top:22px; border-top:2px solid var(--rule)}
+  .part .pk{font-family:var(--sans); font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--warm); font-weight:600; margin:0 0 4px}
+  .part h2{font-family:var(--serif); font-size:30px; margin:0 0 6px}
+  .part .psub{color:var(--ink-soft); margin:0 0 6px; font-size:15px; font-family:var(--serif); max-width:62ch; line-height:1.5}
+
+  /* equations */
+  .eq{font-family:var(--mono); font-size:13.5px; background:var(--surface); border:1px solid var(--rule);
+    border-left:3px solid var(--cold); padding:12px 16px; border-radius:7px; margin:12px 0; line-height:1.7; overflow-x:auto; white-space:pre}
+  .eq.warm{border-left-color:var(--warm)}
+
+  /* code blocks */
+  pre{font-family:var(--mono); font-size:13px; line-height:1.55; background:var(--surface); border:1px solid var(--rule);
+    border-left:3px solid var(--accent); border-radius:7px; padding:12px 15px; overflow-x:auto; margin:12px 0; color:var(--ink)}
+  pre code{background:none; border:none; padding:0; font-size:inherit; color:inherit}
+
+  /* terminal */
+  .term{font-family:var(--mono); font-size:13px; line-height:1.55; background:var(--term-bg); color:var(--term-ink);
+    padding:13px 15px; white-space:pre; margin:6px 0 14px; border:1px solid #000; border-radius:7px; overflow-x:auto;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.03)}
+  .term .dim{color:var(--term-dim)}
+  .term .ok{color:#7FD1A4}
+  .term .bad{color:#E89286}
+  .term-bar{font-family:var(--sans); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint);
+    margin:16px 0 0; display:flex; align-items:center; gap:8px}
+  .term-bar::before{content:""; width:8px; height:8px; border-radius:50%; background:var(--crit); opacity:.7}
+
+  /* tables */
+  .tablewrap{overflow-x:auto; margin:14px 0}
+  table{border-collapse:collapse; width:100%; font-size:13.5px}
+  th,td{padding:7px 11px; text-align:left; border-bottom:1px solid var(--rule-soft); vertical-align:top}
+  th{font-family:var(--sans); font-weight:600; font-size:11.5px; letter-spacing:.05em; text-transform:uppercase;
+    color:var(--ink-faint); border-bottom:1px solid var(--rule)}
+  td{font-variant-numeric:tabular-nums}
+  td code{font-size:12px}
+  tbody tr:hover td{background:var(--surface)}
+
+  /* callouts (warn) */
+  .callout{background:var(--warn-bg); border:1px solid var(--warn-rule); border-left:3px solid var(--crit);
+    border-radius:7px; padding:12px 15px; margin:16px 0; font-size:14.5px}
+  .callout .ct{font-family:var(--sans); font-size:10.5px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--crit); margin:0 0 4px; font-weight:700; display:block}
+  .callout ol{margin:6px 0 0}
+
+  /* note (soft callout) */
+  .note{background:var(--surface); border:1px solid var(--rule); border-left:3px solid var(--ice);
+    padding:12px 15px; border-radius:7px; margin:14px 0; color:var(--ink-soft); font-size:14.5px}
+  .note strong{color:var(--ink)}
+
+  /* lead-in */
+  .lead-in{color:var(--ink-soft); font-style:italic; margin:18px 0 4px; font-size:14px; font-family:var(--serif)}
+
+  /* data list */
+  .data{display:grid; grid-template-columns:max-content 1fr; gap:5px 18px; margin:14px 0;
+    font-variant-numeric:tabular-nums; font-family:var(--mono); font-size:13px}
+  .data dt{color:var(--ink-faint)}
+  .data dd{margin:0; color:var(--ink)}
+
+  /* step list */
+  ol.steps{list-style:none; counter-reset:st; padding:0; margin:16px 0; position:relative}
+  ol.steps::before{content:""; position:absolute; left:13px; top:20px; bottom:12px; width:2px; background:var(--rule)}
+  ol.steps li{counter-increment:st; position:relative; padding:4px 0 4px 40px; margin:6px 0}
+  ol.steps li::before{content:counter(st); position:absolute; left:0; top:2px; width:28px; height:28px;
+    border-radius:50%; background:var(--ground); border:2px solid var(--cold); color:var(--cold);
+    font-family:var(--mono); font-size:12px; font-weight:600; display:flex; align-items:center;
+    justify-content:center; line-height:1}
+
+  /* architecture block */
+  .arch{font-family:var(--mono); font-size:12.5px; background:var(--surface); border:1px solid var(--rule);
+    border-radius:7px; padding:15px; overflow-x:auto; white-space:pre; line-height:1.5; margin:14px 0; color:var(--ink)}
+
+  /* footer */
+  footer{margin-top:56px; padding-top:20px; border-top:1px solid var(--rule-soft); color:var(--ink-faint); font-size:12.5px}
+
+  @media (max-width:960px){
+    .doc{padding:0 0 60px}
+    h1.title{font-size:30px}
+    .part h2{font-size:24px}
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+<nav class="toc">
+  <h4>Part I · Engine</h4>
+  <div class="part-label">Nucleation kernel</div>
+  <ol>
+    <li><a href="#s1">1 · What this module is</a></li>
+    <li><a href="#s2">2 · Dependencies</a></li>
+    <li><a href="#s3">3 · Install &amp; quick start</a></li>
+    <li><a href="#s4">4 · Constants &amp; symbols</a></li>
+    <li><a href="#s5">5 · Input — MetInput</a></li>
+    <li><a href="#s6">6 · Humidity helpers</a></li>
+    <li><a href="#s7">7 · Free-energy decomp.</a></li>
+    <li><a href="#s8">8 · Precipitation diagnosis</a></li>
+    <li><a href="#s9">9 · Output — 48 fields</a></li>
+    <li><a href="#s10">10 · Runner</a></li>
+    <li><a href="#s11">11 · I/O adapters</a></li>
+    <li><a href="#s12">12 · Visualisation</a></li>
+    <li><a href="#s13">13 · Self-checks</a></li>
+    <li><a href="#s14">14 · CLI reference</a></li>
+    <li><a href="#s15">15 · Examples</a></li>
+    <li><a href="#s16">16 · Conventions</a></li>
+    <li><a href="#s17">17 · Validity &amp; hypotheses</a></li>
+    <li><a href="#s18">18 · Troubleshooting</a></li>
+    <li><a href="#s19">19 · Citation &amp; license</a></li>
+    <li><a href="#s20">20 · File map</a></li>
+  </ol>
+  <h4>Part II · Flow</h4>
+  <div class="part-label">3D Boussinesq solver</div>
+  <ol>
+    <li><a href="#s21">21 · The flow package</a></li>
+    <li><a href="#s22">22 · Formulation</a></li>
+    <li><a href="#s23">23 · Scientific integrity</a></li>
+    <li><a href="#s24">24 · Consequences &amp; limits</a></li>
+    <li><a href="#s25">25 · Running it</a></li>
+    <li><a href="#s26">26 · Outputs &amp; the gate</a></li>
+  </ol>
+</nav>
+
+<main class="doc">
+<header class="masthead">
+  <p class="eyebrow">Reference Manual · met_h2o_nucleation + meteorological_flow</p>
+  <h1 class="title">Water-Phase Nucleation <span class="mf">&amp;</span> Flow</h1>
+  <p class="lede">A unified manual for the Ferreira Eq.39a/39b shifted-equilibrium nucleation engine and the
+  3D Boussinesq mixing-chamber flow solver built around it. Part I documents the validated kernel and its
+  application/diagnosis layer; Part II documents the CPU flow package that drives it one-way.</p>
+  <div class="chips">
+    <span class="chip ok">Engine: self-checks pass</span>
+    <span class="chip ok">Flow: Batch-1 gate passed</span>
+    <span class="chip">Core: SHA-256 guarded</span>
+    <span class="chip">Boussinesq · C-grid · Chorin</span>
+  </div>
+  <div class="legend">
+    <span class="chip l"><i></i>liquid — condensation</span>
+    <span class="chip i"><i></i>ice — deposition</span>
+    <span class="chip v"><i></i>vapour</span>
+    <span class="chip c"><i></i>subsaturated / no solution</span>
+  </div>
+</header>
+<hr class="duo-rule">
+
+<div class="part">
+  <p class="pk">Part I</p>
+  <h2>The nucleation engine</h2>
+  <p class="psub">The application/diagnosis layer for the Ferreira Eq.39a/39b shifted-equilibrium framework
+  (Physica B <strong>695</strong> (2024) 416494; MRS Meeting 2026). The validated physics core is bundled,
+  imported read-only, and never modified.</p>
+</div>
+
+<section id="s1">
+<h2><span class="num">§1</span>What this module is</h2>
+<p><code>met_h2o_nucleation.py</code> computes, for one or more atmospheric states:</p>
+<ul>
+<li><strong>vapour → liquid</strong> (condensation) and <strong>vapour → ice</strong> (deposition) nucleation, homogeneous or heterogeneous;</li>
+<li>the <strong>non-equilibrium thermal closure</strong> (radius as continuation variable, gradient as the Brent-solved unknown);</li>
+<li>the <strong>2nd-order Gibbs–Thomson coefficient</strong> and <strong>1st/2nd-order critical radii</strong> (Ferreira Eq.39b parabola, heterogeneous with ∂f/∂r);</li>
+<li>the <strong>free-energy decomposition</strong> ΔG_V / ΔG_bulk / ΔG_surface / ΔG_config / ΔG_total at the evaluated radius;</li>
+<li>the <strong>shifted equilibrium pressure</strong> P_eq,shift = P_sat,phase(T_local);</li>
+<li>the <strong>nucleation rate</strong> I and log10 I (overflow-safe) and the expected event count in a cell/timestep;</li>
+<li>transparent <strong>rain / snow / graupel / hail favourability indices</strong> (0..1) with contributing / missing variables, confidence and a caveat — <em>a high rate never by itself implies precipitation</em>;</li>
+<li>ingestion of scalars, profiles, time series, <strong>xarray / NetCDF / GRIB</strong> fields and structured <strong>JSON / CSV / NetCDF</strong> output;</li>
+<li>optional <strong>PNG figures</strong>.</li>
+</ul>
+<p>All internal quantities are <strong>SI</strong>. When a quantity cannot be determined from the inputs it is reported as <code>"undetermined"</code> (the constant <code>NA</code>) with the missing information named.</p>
+
+<h3>1.1 Architecture</h3>
+<div class="arch">                 +-------------------------------+
+   met input --> |  met_h2o_nucleation.py         |  &lt;-- application/diagnosis layer
+                 |  MetInput / Runner / Diagnosis |
+                 |  free-energy decomp / IO / viz |
+                 +---------------+---------------+
+                                 |  imports READ-ONLY (importlib)
+                                 v
+                 +-------------------------------+
+                 |  unified_h2o_nucleation_      |  &lt;-- validated core (DO NOT MODIFY)
+                 |  climate.py                   |      closure, r_C, Gamma, rate, tests [1]-[21]
+                 +-------------------------------+</div>
+<p>The core closure (F(g;r)=Γ²/(4πr²)−g=0), the critical-radius parabola, the surface-stress law, the
+nucleation rate and the validation suite (incl. the ice-reference SHA-256 guard) are <strong>delegated</strong>
+to the core. This layer adds only what the core deliberately does not own: free-energy decomposition,
+precipitation diagnosis, I/O adapters, the full report schema, visualisation.</p>
+
+<h3>1.2 The physics in brief</h3>
+<p>Classical nucleation theory fixes the critical radius from a balance of bulk and surface free energy at a
+<em>single</em> equilibrium. This framework (Ferreira, Eq. 39a/39b) treats nucleation under a <strong>thermal
+gradient</strong> instead: a non-zero ∇T across the embryo <em>shifts</em> the local equilibrium, so the
+saturation pressure the germ actually sees is <code>P_eq,shift = P_sat,phase(T_local)</code> rather than
+<code>P_sat,phase(T_ambient)</code>. What the tool reports follows from that shift:</p>
+<ul>
+<li>the <strong>closure</strong> <code>F(g;r) = Γ²/(4πr²) − g = 0</code> ties the gradient <code>g = ∇T</code> to the continuation radius <code>r</code>; with <code>r</code> pinned at <code>r_ref</code>, the gradient is the Brent-solved unknown (or you prescribe it with <code>--gradT</code>);</li>
+<li>the <strong>critical radius</strong> is the root of a <strong>2nd-order (parabolic) stationarity</strong> condition (Eq. 39b), reported as <code>r_critical_2nd_m</code> — the principal result — next to the classical 1st-order value for comparison;</li>
+<li>the <strong>nucleation barrier and rate</strong> follow from the shifted state and are decomposed into bulk / surface / configurational parts;</li>
+<li>everything downstream (rate → favourability → diagnostic class) is a <em>diagnosis</em> of this shifted-equilibrium state. The tool never invents hydrometeor growth, and never turns a high rate into a precipitation forecast.</li>
+</ul>
+<p>Read <code>∇T</code> here as the <strong>local</strong> temperature gradient at the embryo interface
+(validated 1–10⁴ K/m), not a synoptic front gradient (~10⁻³ K/m).</p>
+</section>
+
+<section id="s2">
+<h2><span class="num">§2</span>Dependencies</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>Package</th><th>Required?</th><th>Used for</th></tr></thead>
+<tbody>
+<tr><td><code>numpy</code></td><td>yes</td><td>arrays, numerics</td></tr>
+<tr><td><code>scipy</code></td><td>yes</td><td><code>brentq</code> (thermal closure); imported by the bundled core at load</td></tr>
+<tr><td><code>matplotlib</code></td><td>yes</td><td>imported by the bundled core at load (headless <code>Agg</code> backend); also drives <code>MetNucleationPlotter</code> figures</td></tr>
+<tr><td><code>xarray</code></td><td>optional</td><td><code>from_xarray</code>, <code>to_xarray</code>, NetCDF I/O</td></tr>
+<tr><td><code>netCDF4</code> / <code>h5netcdf</code></td><td>optional</td><td>NetCDF4/HDF5 read/write</td></tr>
+<tr><td><code>cfgrib</code> + <code>eccodes</code></td><td>optional</td><td>GRIB ingestion</td></tr>
+<tr><td><code>pandas</code></td><td>optional</td><td>convenience</td></tr>
+</tbody></table></div>
+<p><code>numpy</code>, <code>scipy</code> and <code>matplotlib</code> are <strong>required</strong> just to import the
+package, because the bundled core imports all three at load time. The remaining backends are optional: if one
+is absent the relevant path <strong>degrades gracefully</strong> to <code>"undetermined"</code> naming the missing
+dependency rather than crashing (<code>from_grib</code> raises a clear <code>RuntimeError</code> telling you to
+install <code>cfgrib</code>; <code>from_netcdf</code> tries <code>netcdf4 → h5netcdf → scipy</code> and falls back
+to NetCDF3 via the scipy engine when only scipy is present). Install everything with
+<code>pip install -r requirements.txt</code>.</p>
+<p>The validated core is <strong>bundled in this repository</strong> under
+<code>unified_h2o_nucleation_climate/</code> and loaded by <code>importlib</code> via a
+<code>__file__</code>-relative search: the module looks for
+<code>unified_h2o_nucleation_climate/</code> in its own folder, then one and two levels up, so it runs from any
+working directory with <strong>no <code>PYTHONPATH</code></strong>. The core and its two SHA-256-guarded
+reference models are <strong>never modified</strong> by this layer.</p>
+</section>
+
+<section id="s3">
+<h2><span class="num">§3</span>Installation &amp; quick start</h2>
+<h3>3.1 Install</h3>
+<pre><code>git clone https://github.com/ileaof/meteorological-water-phase-nucleation-application-layer.git
+cd meteorological-water-phase-nucleation-application-layer
+python -m pip install -r requirements.txt      # numpy, scipy, matplotlib (required)
+python met_h2o_nucleation.py --validate         # prove the bundled core is intact -&gt; SELF-CHECKS PASS</code></pre>
+<p>Requires <strong>Python ≥ 3.9</strong>. The repository is <strong>self-contained</strong>: the validated core,
+the <code>het_contact_angle</code> module and the two SHA-256-guarded reference models are all bundled, so no
+<code>PYTHONPATH</code> or external checkout is needed. A successful <code>--validate</code> run ends with
+<code>SELF-CHECKS PASS</code> (see Case 9).</p>
+
+<h3>3.2 Command line</h3>
+<pre><code># one state, both phases, supersaturated, with dynamics + a JSON dump (run from the repo root):
+python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --Vcell 1e6 --json out_met_nucleation/cli_report.json
+
+# prove the core is untouched and the met-layer self-checks pass:
+python met_h2o_nucleation.py --validate</code></pre>
+<p>The CLI prints the full 48-field report for each admissible phase. See §14 for all flags.</p>
+
+<h3>3.3 Python API (minimal)</h3>
+<pre><code>import met_water_nucleation as M
+
+met = M.MetInput(T=260.0, P=70000.0, RH=110.0, rh_reference="water",
+                 phase_mode="both", mode="homogeneous",
+                 w=2.0, LWC=5e-4, IWC=1e-4, cooling_rate=-2.0e-4,
+                 N_ccn=3.0e8, N_inp=1.0e4,
+                 dt_micro=60.0, cell_volume=1.0e6)
+
+runner = M.MetNucleationRunner(met)
+p_v, src, warns = M.resolve_humidity(met, 260.0, 70000.0)   # -&gt; Pa
+reps = runner.evaluate_point(260.0, 70000.0, p_v,
+                             dynamics={"w": 2.0, "LWC": 5e-4, "IWC": 1e-4})
+
+for phase, report in reps.items():          # dict[phase] -&gt; MetNucleationReport
+    print(phase, report.status, report.log10_nucleation_rate,
+          report.r_critical_2nd_m, report.diagnostic_class)
+
+M.to_json(reps, "out.json")                  # full 48-field schema</code></pre>
+</section>
+<section id="s4">
+<h2><span class="num">§4</span>Constants &amp; re-exported core symbols</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>Name</th><th>Value / source</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>PHASE_LIQUID</code></td><td><code>"liquid"</code></td><td>phase tag</td></tr>
+<tr><td><code>PHASE_ICE</code></td><td><code>"ice"</code></td><td>phase tag</td></tr>
+<tr><td><code>Tt</code></td><td><code>273.16</code> K</td><td>triple-point temperature</td></tr>
+<tr><td><code>Pt</code></td><td><code>611.657</code> Pa</td><td>triple-point pressure</td></tr>
+<tr><td><code>THETA0</code></td><td><code>radians(45)</code></td><td>default contact angle — <strong>brentq fallback only</strong>; θ is solved by Eq. 17 and reported as <code>contact_angle_deg</code></td></tr>
+<tr><td><code>R_REF_DEFAULT</code></td><td><code>1e-7</code> m</td><td>default continuation radius</td></tr>
+<tr><td><code>T_MIN_LOCAL</code></td><td><code>233</code> K</td><td>deep-supercooling lower bound (extrapolation flag)</td></tr>
+<tr><td><code>EPS_MW</code></td><td><code>0.622</code></td><td>M_H2O / M_dry_air (mixing-ratio epsilon)</td></tr>
+<tr><td><code>NA</code></td><td><code>"undetermined"</code></td><td>"could not be determined" sentinel</td></tr>
+<tr><td><code>MANDATORY_FIELDS</code></td><td>list[str]</td><td>the 48-field output schema (order)</td></tr>
+<tr><td><code>UNITS</code></td><td>dict[str,str]</td><td>SI unit of each output field</td></tr>
+<tr><td><code>FIELD_ALIASES</code></td><td>dict[str,list]</td><td>accepted input variable names per canonical field</td></tr>
+</tbody></table></div>
+<p>Re-exported from the core (so you need not import the core directly):
+<code>SaturationProperties</code>, <code>UnifiedNucleationSimulator</code>, <code>AtmosphericInput</code>,
+<code>LiquidNucleationModel</code>, <code>IceNucleationModel</code>, <code>ftheta</code>.</p>
+<p><code>ftheta(theta) = 2 − 3 cos θ + cos³ θ</code> (un-normalised, 0..4); the heterogeneous factor used
+internally is <code>ftheta(theta)/4</code> (normalised, 0..1).</p>
+</section>
+
+<section id="s5">
+<h2><span class="num">§5</span>Input — <code>MetInput</code></h2>
+<p>A dataclass holding the thermo fields shared with the core <strong>plus</strong> the dynamic/microphysical/coordinate
+fields the core does not carry. Scalars, 1-D arrays (profiles / time series) or callables are accepted; the array
+drivers iterate elementwise. Dynamic/microphysical fields default to <code>None</code> → <code>"undetermined"</code> in the report.</p>
+
+<h3>5.1 Thermodynamic fields (shared with core)</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Unit</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>T</code></td><td>float/array/callable</td><td><code>258.15</code></td><td>K</td><td>ambient temperature</td></tr>
+<tr><td><code>P</code></td><td>float/array/callable</td><td><code>70000.0</code></td><td>Pa</td><td><strong>total</strong> atmospheric pressure</td></tr>
+<tr><td><code>RH</code></td><td>optional</td><td><code>None</code></td><td>%</td><td>relative humidity</td></tr>
+<tr><td><code>rh_reference</code></td><td>str</td><td><code>"water"</code></td><td>—</td><td><code>"water"</code> or <code>"ice"</code> (reference for RH)</td></tr>
+<tr><td><code>y_v</code></td><td>optional</td><td><code>None</code></td><td>0..1</td><td>vapour mole fraction</td></tr>
+<tr><td><code>p_v</code></td><td>optional</td><td><code>None</code></td><td>Pa</td><td>vapour <strong>partial</strong> pressure</td></tr>
+<tr><td><code>q_v</code></td><td>optional</td><td><code>None</code></td><td>kg/kg</td><td>specific humidity</td></tr>
+<tr><td><code>r_mix</code></td><td>optional</td><td><code>None</code></td><td>kg/kg</td><td>mass mixing ratio</td></tr>
+<tr><td><code>grad_T</code></td><td>optional</td><td><code>None</code></td><td>K/m</td><td>requested |dT/dr| (else solved)</td></tr>
+</tbody></table></div>
+<p class="note">At least one of <code>p_v, RH, y_v, r_mix, q_v</code> must be provided (see <code>resolve_humidity</code>).</p>
+
+<h3>5.2 Continuation / heterogeneous</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>Field</th><th>Default</th><th>Unit</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>r_ref</code></td><td><code>R_REF_DEFAULT</code> (1e-7)</td><td>m</td><td>continuation radius</td></tr>
+<tr><td><code>theta</code></td><td><code>THETA0</code> (45°)</td><td>rad</td><td>contact angle — <strong>solver fallback only</strong>. The nucleation angle θ is <em>calculated</em> by the solution via Ferreira Eq. 17 (<code>r_C,Het/r_C,Hom</code> self-consistency) and reported as <code>contact_angle_deg</code>; <code>theta</code> is used only when no self-consistent angle is found.</td></tr>
+<tr><td><code>mode</code></td><td><code>"homogeneous"</code></td><td>—</td><td><code>"homogeneous"</code> or <code>"heterogeneous"</code></td></tr>
+<tr><td><code>phase_mode</code></td><td><code>"auto"</code></td><td>—</td><td><code>auto</code> / <code>liquid</code> / <code>ice</code> / <code>both</code></td></tr>
+</tbody></table></div>
+<p><code>phase_mode</code> semantics: <code>auto</code> — compute the thermodynamically admissible phase(s) and report the kinetically dominant one; <code>both</code> — compute liquid and ice side by side; <code>liquid</code> / <code>ice</code> — single phase.</p>
+
+<h3>5.3 Dynamic / microphysical (new, not in core)</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>Field</th><th>Unit</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>w</code></td><td>m/s</td><td>vertical velocity (updraft)</td></tr>
+<tr><td><code>LWC</code></td><td>kg/m³</td><td>liquid water content</td></tr>
+<tr><td><code>IWC</code></td><td>kg/m³</td><td>ice water content</td></tr>
+<tr><td><code>N_ccn</code></td><td>1/m³</td><td>cloud condensation nuclei number concentration</td></tr>
+<tr><td><code>N_inp</code></td><td>1/m³</td><td>ice nucleating particle number concentration</td></tr>
+<tr><td><code>cooling_rate</code></td><td>K/s</td><td>dT/dt (<strong>&lt;0 means cooling</strong>)</td></tr>
+<tr><td><code>dt_micro</code></td><td>s</td><td>microphysics timestep (enables <code>expected_events</code>)</td></tr>
+<tr><td><code>cell_volume</code></td><td>m³</td><td>grid-cell volume (enables <code>expected_events</code>)</td></tr>
+<tr><td><code>freezing_level</code></td><td>m</td><td>altitude of the 0 °C isotherm</td></tr>
+</tbody></table></div>
+
+<h3>5.4 Coordinates / metadata</h3>
+<p><code>z</code> (geopotential altitude, m), <code>lat</code>, <code>lon</code>, <code>time</code> (s since reference) — all optional, carried through to output. <code>__post_init__</code> validates <code>phase_mode</code>, <code>mode</code>, <code>rh_reference</code> and raises <code>ValueError</code> on a bad value.</p>
+</section>
+
+<section id="s6">
+<h2><span class="num">§6</span>Humidity helpers</h2>
+<pre><code>p_v, source, warnings = M.resolve_humidity(met, T, P)   # -&gt; (Pa, str, list[str])</code></pre>
+<p>Resolves <code>p_v</code> [Pa] from whichever humidity input is given, <strong>cross-checking consistency</strong>
+when more than one is provided (1 % relative tolerance; on mismatch it keeps the first and appends a warning).
+<code>source</code> is one of <code>"p_v"</code>, <code>"RH"</code>, <code>"y_v"</code>, <code>"r_mix"</code>,
+<code>"q_v"</code>. Uses the core's <code>SaturationProperties</code> correlations (IAPWS Wagner liquid, Goff-Gratch ice).</p>
+<div class="eq">p_v = r · P / (r + ε)        r = ε · p_v / (P − p_v)
+q   = r / (1 + r)             r = q / (1 − q)            ,  ε = 0.622</div>
+<p>Helpers: <code>mixing_ratio_from_p_v(p_v, P)</code>, <code>specific_humidity_from_p_v(p_v, P)</code>.</p>
+</section>
+
+<section id="s7">
+<h2><span class="num">§7</span>Free-energy decomposition</h2>
+<pre><code>fe = M.free_energy_decomposition(model, st, theta)   # -&gt; dict</code></pre>
+<p>Decomposes the nucleation free energy at the evaluated radius <code>st['r']</code>, using the core model's
+own hooks (<code>st['dGv']</code>, <code>st['gam']</code>) — <strong>no re-derivation of the physics</strong>. Returns:</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Key</th><th>Unit</th><th>Definition</th></tr></thead>
+<tbody>
+<tr><td><code>DeltaG_V_J_m3</code></td><td>J/m³</td><td>ΔS_V · ΔT</td></tr>
+<tr><td><code>DeltaS_bulk</code></td><td>J/(m³·K)</td><td>volumetric entropy change (st['dsv'])</td></tr>
+<tr><td><code>DeltaG_bulk_J</code></td><td>J</td><td>(4π/3) r³ ΔG_V</td></tr>
+<tr><td><code>DeltaG_surface_J</code></td><td>J</td><td>4π r² γ(r, T_local)</td></tr>
+<tr><td><code>DeltaG_config_J</code></td><td>J</td><td>(f/4 − 1)·(ΔG_bulk + ΔG_surface) (hetero correction)</td></tr>
+<tr><td><code>DeltaG_total_J</code></td><td>J</td><td>(f/4)·(ΔG_bulk + ΔG_surface)</td></tr>
+<tr><td><code>f_theta</code></td><td>—</td><td><code>2 − 3cos θ + cos³ θ</code></td></tr>
+<tr><td><code>f_theta_normalised</code></td><td>0..1</td><td><code>f/4</code></td></tr>
+</tbody></table></div>
+<p>Homogeneous limit θ = π → f/4 = 1 → <code>DeltaG_config_J = 0</code>.</p>
+<p class="note">This decomposition is a <strong>diagnostic at the representative continuation radius <code>r</code></strong>.
+The <em>critical</em> barriers ΔG_C come from the validated core (<code>r_C_1st</code> / <code>r_C_2nd</code> parabolic
+stationarity) and are reported separately as <code>DeltaG_critical_1st_J</code> / <code>DeltaG_critical_2nd_J</code>.</p>
+</section>
+
+<section id="s8">
+<h2><span class="num">§8</span>Precipitation diagnosis</h2>
+<h3>8.1 <code>Favorability</code> dataclass</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>value</code></td><td>0..1 favourability</td></tr>
+<tr><td><code>contributing_vars</code></td><td>factors that were present and contributed</td></tr>
+<tr><td><code>missing_vars</code></td><td>factors that were absent</td></tr>
+<tr><td><code>confidence</code></td><td>0..1 = (#present ideal factors)/(#ideal)</td></tr>
+<tr><td><code>explanation</code></td><td>short physical explanation</td></tr>
+<tr><td><code>caveat</code></td><td>standard caveat when confidence is low (see below)</td></tr>
+</tbody></table></div>
+
+<h3>8.2 <code>PrecipitationDiagnosis</code></h3>
+<pre><code>diag = M.PrecipitationDiagnosis(T, S_w, S_i, log10I, phase,
+                                 w=None, LWC=None, IWC=None, cooling_rate=None,
+                                 freezing_level=None, N_ccn=None, N_inp=None, z=None)
+rain  = diag.rain()      # -&gt; Favorability
+snow  = diag.snow()
+graup = diag.graupel()
+hail  = diag.hail()
+klass = diag.diagnostic_class()</code></pre>
+<p class="callout"><span class="ct">Honesty guard</span>
+A high nucleation rate <strong>never by itself</strong> implies rain or hail — hydrometeor growth
+(condensation/deposition, collision-coalescence, accretion, riming, melting/refreezing) is <strong>not modelled</strong>.
+When the dynamic/microphysical data are absent, the index reflects thermodynamic favourability only, confidence is
+low, and the caveat is attached: <em>"Thermodynamically favourable to nucleation, but the dynamic and microphysical
+data are insufficient to confirm precipitation or hail."</em>
+Caveat triggers: confidence &lt; 0.5 for rain/snow/graupel; &lt; 0.75 for hail (the highest data bar).</p>
+
+<h4>Elementary normalised factors (transparent, no hidden tuning)</h4>
+<div class="tablewrap"><table>
+<thead><tr><th>Factor</th><th>Formula</th><th>Saturation point</th></tr></thead>
+<tbody>
+<tr><td><code>thermo_supw</code> / <code>sup_ice</code></td><td>(S − 1)/0.20</td><td>20 % supersaturation</td></tr>
+<tr><td><code>thermo_nuc</code> / <code>nuc</code></td><td>sigmoid(log10I; x0=6, width=1.5)</td><td>I ≈ 1e6 /m³/s</td></tr>
+<tr><td><code>cold</code></td><td>(273.15 − T)/40</td><td>0 at 0 °C, 1 at −40 °C</td></tr>
+<tr><td><code>warm</code></td><td>(T − 273.15)/20</td><td>0 at 0 °C, 1 at 20 °C</td></tr>
+<tr><td><code>updraft</code></td><td>w/5</td><td>5 m/s</td></tr>
+<tr><td><code>hail_updraft</code></td><td>(w − 5)/15</td><td>20 m/s</td></tr>
+<tr><td><code>LWC</code></td><td>LWC/1e-3</td><td>1 g/m³</td></tr>
+<tr><td><code>IWC</code></td><td>IWC/1e-3</td><td>1 g/m³</td></tr>
+<tr><td><code>cool</code></td><td>|cooling_rate|/5e-4</td><td>~1.8 K/h</td></tr>
+<tr><td><code>CCN</code></td><td>N_ccn/1e9</td><td>1000 /cm³</td></tr>
+<tr><td><code>INP</code></td><td>N_inp/1e6</td><td>1 /cm³</td></tr>
+</tbody></table></div>
+<p>The <code>_sigmoid</code> mapping is a <strong>documented diagnostic mapping, not a physical rate law</strong>
+(threshold log10I = 6).</p>
+
+<h4>The four indices</h4>
+<div class="tablewrap"><table>
+<thead><tr><th>Index</th><th>Factors</th><th>Ideal set</th></tr></thead>
+<tbody>
+<tr><td><code>rain</code></td><td>thermo_supw, thermo_nuc, updraft, LWC, CCN (+ cold_rain_melt when <strong>both</strong> IWC and freezing_level present)</td><td>5–6</td></tr>
+<tr><td><code>snow</code></td><td>sup_ice, cold, nuc, IWC, INP</td><td>5</td></tr>
+<tr><td><code>graupel</code></td><td>cold, sup_ice, nuc, LWC, IWC, updraft</td><td>6</td></tr>
+<tr><td><code>hail</code></td><td>cold, nuc, LWC, hail_updraft, IWC</td><td>5 (ideal also wants supercooled_depth + melt_below)</td></tr>
+</tbody></table></div>
+<p><code>_combine</code> is a <strong>weighted mean over present factors (equal weights, renormalised)</strong> —
+absent factors do not penalise the value but lower the confidence.</p>
+
+<h4><code>diagnostic_class()</code> — actually returned labels</h4>
+<p><code>subsaturated</code>, <code>saturated_water</code>, <code>saturated_ice</code>, <code>condensation_favorable</code>,
+<code>warm_rain</code>, <code>mixed_phase</code>, <code>supercooled_liquid</code>, <code>deposition_favorable</code>,
+<code>insufficient_data</code>. (Gradients like <code>cold_rain</code> / <code>snow</code> / <code>graupel</code> /
+<code>hail</code> / <code>freezing_rain</code> are expressed through the <strong>favourability indices</strong>, not this class.)</p>
+</section>
+<section id="s9">
+<h2><span class="num">§9</span>Output — <code>MetNucleationReport</code></h2>
+<p>One record per phase per ambient point. Carries the 48 mandatory fields plus <code>favorability_detail</code>,
+<code>metadata</code>, and the assumptions/warnings/validity_flags lists. Use <code>report.to_dict()</code> for a
+plain dict (NaN → <code>None</code>).</p>
+
+<h3>9.1 The 48-field schema (with units)</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>#</th><th>Field</th><th>Unit</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>status</code></td><td>— (<code>ok</code> / <code>subsaturated</code> / <code>no_solution</code>)</td></tr>
+<tr><td>2</td><td><code>phase</code></td><td>— (<code>liquid</code> / <code>ice</code>)</td></tr>
+<tr><td>3</td><td><code>nucleation_mode</code></td><td>— (<code>homogeneous</code> / <code>heterogeneous</code>)</td></tr>
+<tr><td>4</td><td><code>contact_angle_deg</code></td><td>deg — nucleation angle θ <strong>solved</strong> by Ferreira Eq. 17; <code>≈180</code> for the homogeneous limit</td></tr>
+<tr><td>5</td><td><code>T_ambient_K</code></td><td>K</td></tr>
+<tr><td>6</td><td><code>T_local_K</code></td><td>K (shifted local temperature)</td></tr>
+<tr><td>7</td><td><code>P_total_Pa</code></td><td>Pa</td></tr>
+<tr><td>8</td><td><code>p_v_Pa</code></td><td>Pa</td></tr>
+<tr><td>9</td><td><code>RH_water_percent</code></td><td>%</td></tr>
+<tr><td>10</td><td><code>RH_ice_percent</code></td><td>%</td></tr>
+<tr><td>11</td><td><code>S_water</code></td><td>1 (saturation ratio wrt water)</td></tr>
+<tr><td>12</td><td><code>S_ice</code></td><td>1 (saturation ratio wrt ice)</td></tr>
+<tr><td>13</td><td><code>gradT_K_m</code></td><td>K/m</td></tr>
+<tr><td>14</td><td><code>DeltaT_K</code></td><td>K</td></tr>
+<tr><td>15</td><td><code>P_eq_classical_Pa</code></td><td>Pa</td></tr>
+<tr><td>16</td><td><code>P_eq_shift_Pa</code></td><td>Pa (shifted equilibrium pressure)</td></tr>
+<tr><td>17</td><td><code>DeltaP_eq_Pa</code></td><td>Pa (P_eq_classical − P_eq_shift)</td></tr>
+<tr><td>18</td><td><code>gamma_J_m2</code></td><td>J/m² (surface energy at r)</td></tr>
+<tr><td>19</td><td><code>dgamma_dr_J_m3</code></td><td>J/m³ (∂γ/∂r)</td></tr>
+<tr><td>20</td><td><code>surface_stress_N_m</code></td><td>N/m (τ; Shuttleworth/Gurtin-Murdoch for ice)</td></tr>
+<tr><td>21</td><td><code>DeltaS_bulk</code></td><td>J/(m³·K)</td></tr>
+<tr><td>22</td><td><code>DeltaG_V_J_m3</code></td><td>J/m³</td></tr>
+<tr><td>23</td><td><code>DeltaG_bulk_J</code></td><td>J</td></tr>
+<tr><td>24</td><td><code>DeltaG_surface_J</code></td><td>J</td></tr>
+<tr><td>25</td><td><code>DeltaG_config_J</code></td><td>J</td></tr>
+<tr><td>26</td><td><code>DeltaG_total_J</code></td><td>J</td></tr>
+<tr><td>27</td><td><code>Gamma_1st</code></td><td>K·m (1st-order Gibbs-Thomson)</td></tr>
+<tr><td>28</td><td><code>Gamma_2nd</code></td><td>K·m (2nd-order Gibbs-Thomson)</td></tr>
+<tr><td>29</td><td><code>r_critical_1st_m</code></td><td>m</td></tr>
+<tr><td>30</td><td><code>r_critical_2nd_m</code></td><td>m (principal result)</td></tr>
+<tr><td>31</td><td><code>DeltaG_critical_1st_J</code></td><td>J</td></tr>
+<tr><td>32</td><td><code>DeltaG_critical_2nd_J</code></td><td>J</td></tr>
+<tr><td>33</td><td><code>nucleation_rate_m3_s</code></td><td>1/(m³·s)</td></tr>
+<tr><td>34</td><td><code>log10_nucleation_rate</code></td><td>log10(1/(m³·s))</td></tr>
+<tr><td>35</td><td><code>expected_events</code></td><td>1 (I·dt_micro·cell_volume; <code>None</code> if undetermined)</td></tr>
+<tr><td>36</td><td><code>dominant_phase</code></td><td>—</td></tr>
+<tr><td>37</td><td><code>rain_favorability</code></td><td>0..1</td></tr>
+<tr><td>38</td><td><code>snow_favorability</code></td><td>0..1</td></tr>
+<tr><td>39</td><td><code>graupel_favorability</code></td><td>0..1</td></tr>
+<tr><td>40</td><td><code>hail_favorability</code></td><td>0..1</td></tr>
+<tr><td>41</td><td><code>diagnostic_class</code></td><td>— (see §8.2)</td></tr>
+<tr><td>42</td><td><code>confidence</code></td><td>0..1 (mean of per-index confidences)</td></tr>
+<tr><td>43</td><td><code>assumptions</code></td><td>list[str]</td></tr>
+<tr><td>44</td><td><code>warnings</code></td><td>list[str]</td></tr>
+<tr><td>45</td><td><code>validity_flags</code></td><td>list[str]</td></tr>
+<tr><td>46</td><td><code>solver_iterations</code></td><td>1 (Brent iterations; <code>None</code> if not captured)</td></tr>
+<tr><td>47</td><td><code>closure_residual</code></td><td>K/m (residual of F(g;r)=0)</td></tr>
+<tr><td>48</td><td><code>critical_radius_residual</code></td><td>J (parabolic stationarity residual)</td></tr>
+</tbody></table></div>
+
+<h3>9.2 Validity flags</h3>
+<p><code>in_valid_range</code> / <code>out_of_range</code>, <code>supercooled_liquid_meta</code>,
+<code>T_local_near_lower_bound_extrapolated</code>, <code>above_triple_point_liquid_stable</code>,
+<code>subsaturated</code>, <code>no_solution</code>.</p>
+
+<h3>9.3 Metadata block (<code>report.metadata</code>)</h3>
+<p><code>units</code> (= <code>UNITS</code>), <code>sign_conventions</code>, <code>sources</code> (Psat water/ice,
+surface liquid/ice, rate, framework), <code>validity_ranges</code>, <code>f_theta_convention</code>,
+<code>GT_convention</code>, and a <code>note</code> that hydrometeor growth is not modelled.</p>
+</section>
+
+<section id="s10">
+<h2><span class="num">§10</span>Runner — <code>MetNucleationRunner</code></h2>
+<pre><code>runner = M.MetNucleationRunner(met)
+reps = runner.evaluate_point(T, P, p_v, grad_T=None, dynamics=None)</code></pre>
+<div class="tablewrap"><table>
+<thead><tr><th>Driver</th><th>Signature</th><th>Returns</th></tr></thead>
+<tbody>
+<tr><td><code>evaluate_point</code></td><td><code>(T, P, p_v, grad_T=None, dynamics=None)</code></td><td><code>dict[phase] → MetNucleationReport</code></td></tr>
+<tr><td><code>evaluate_profile</code></td><td><code>(T_arr, P_arr, p_v_arr, z_arr, dyn_arrs=None)</code></td><td><code>list[dict]</code> (elementwise over arrays)</td></tr>
+<tr><td><code>evaluate_series</code></td><td><code>(T_arr, P_arr, p_v_arr, t_arr, dyn_arrs=None)</code></td><td><code>list[dict]</code> (elementwise over time)</td></tr>
+</tbody></table></div>
+<p><code>dynamics</code> / <code>dyn_arrs</code> keys: <code>w, LWC, IWC, cooling_rate, freezing_level,
+N_ccn, N_inp, z</code> (any subset; absent → <code>"undetermined"</code>).</p>
+<p>Internals worth knowing:</p>
+<ul>
+<li><code>_atm</code> builds a core <code>AtmosphericInput</code> (no modification of the core class).</li>
+<li><code>_solver_iterations</code> re-runs the <strong>same</strong> bracket + <code>brentq</code> the core uses, with <code>full_output=True</code>, to capture the iteration count deterministically (guarded; returns <code>None</code> on any failure).</li>
+<li><code>_build_report</code> assembles the core result + state dict + free-energy decomposition + expected_events + diagnosis into a <code>MetNucleationReport</code>, and sets assumptions/warnings/validity_flags.</li>
+<li><code>brentq_local(func, a, b, args=(), xtol, rtol, maxiter)</code> — <code>scipy.optimize.brentq</code> with <code>full_output=True</code>.</li>
+</ul>
+</section>
+
+<section id="s11">
+<h2><span class="num">§11</span>I/O adapters</h2>
+<h3>11.1 Ingestion</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>Function</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>from_xarray(ds)</code></td><td>name-tolerant field mapping (see <code>FIELD_ALIASES</code>); missing → <code>None</code></td></tr>
+<tr><td><code>from_netcdf(path)</code></td><td>tries <code>netcdf4 → h5netcdf → scipy</code>; clear error naming the missing backend</td></tr>
+<tr><td><code>from_grib(path)</code></td><td>requires <code>cfgrib</code>; raises a <code>RuntimeError</code> telling you to <code>pip install cfgrib eccodes</code> if absent</td></tr>
+</tbody></table></div>
+<p><code>FIELD_ALIASES</code> maps canonical names to accepted input names, e.g. <code>T</code> ←
+<code>T, tair, air_temperature, temp, temperature, T_ambient</code>; <code>P</code> ←
+<code>P, ps, surface_pressure, pressure, air_pressure, sp</code>; <code>q_v</code> ←
+<code>q_v, q, specific_humidity, hus</code>; <code>z</code> ← <code>z, altitude, height, h,
+geopotential_height, gph</code>; etc. (see source for the full table).</p>
+
+<h3>11.2 Output</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>Function</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>reports_to_records(reports)</code></td><td>flatten (dict-per-point, or list of those) → list of JSON records</td></tr>
+<tr><td><code>to_json(reports, path)</code></td><td>full schema; NaN → <code>null</code>; lists/dicts JSON-encoded</td></tr>
+<tr><td><code>to_csv(reports, path)</code></td><td>48 columns in <code>MANDATORY_FIELDS</code> order; NaN/None → <code>NA</code></td></tr>
+<tr><td><code>to_xarray(reports, path=None)</code></td><td>numeric fields over an <strong>unnamed <code>phase</code> dimension</strong>; string fields kept in JSON/CSV only; phase-name mapping stored in <code>ds.attrs['phase_names']</code></td></tr>
+<tr><td><code>to_netcdf(reports, path)</code></td><td><code>to_xarray</code> + write (scipy engine → NetCDF3 unless netCDF4/h5netcdf present)</td></tr>
+</tbody></table></div>
+<p class="note">The unnamed-dimension + <code>phase_names</code> attribute design is deliberate: string phase
+coordinates do not round-trip cleanly through NetCDF3/scipy, so the phase identity is preserved as an attribute
+rather than a coordinate variable. Read it back with <code>ds.attrs['phase_names'].split(',')</code>.</p>
+</section>
+
+<section id="s12">
+<h2><span class="num">§12</span>Visualisation — <code>MetNucleationPlotter</code></h2>
+<pre><code>plot = M.MetNucleationPlotter("out_met_nucleation")   # uses the Agg backend</code></pre>
+<div class="tablewrap"><table>
+<thead><tr><th>Method</th><th>Output file</th><th>Requires</th></tr></thead>
+<tbody>
+<tr><td><code>plot_peq_shift_surface(phase, T_range, nT, g_range, ng)</code></td><td><code>peq_shift_surface_{phase}.png</code></td><td>core models (direct)</td></tr>
+<tr><td><code>plot_gibbs_thomson_and_radii(reports_by_gradT, phase)</code></td><td><code>gt_and_radii_{phase}.png</code></td><td><code>[(g, reps), ...]</code></td></tr>
+<tr><td><code>plot_free_energy(model, T, P, p_v, theta=π, n=40)</code></td><td><code>free_energy_vs_r.png</code></td><td>a core model</td></tr>
+<tr><td><code>plot_rates(reports_liquid, reports_ice)</code></td><td><code>rates_vs_T.png</code></td><td>lists of reports (per phase)</td></tr>
+<tr><td><code>plot_vertical_profile(profile_reports, z_arr)</code></td><td><code>vertical_profile.png</code></td><td>list of per-level report dicts</td></tr>
+<tr><td><code>plot_favorability_bars(report)</code></td><td><code>favorability_bars.png</code></td><td>one <code>MetNucleationReport</code></td></tr>
+</tbody></table></div>
+<p><code>plot_peq_shift_surface</code> brute-force scans <code>r</code> to find the radius whose closure yields
+each requested <code>g</code>; reduce <code>nT</code>/<code>ng</code> if runtime matters. The complete figure
+suite is generated by <strong><code>example_met_figures.py</code></strong>.</p>
+</section>
+
+<section id="s13">
+<h2><span class="num">§13</span>Self-checks &amp; validation</h2>
+<pre><code>M.run_self_checks(verbose=True)   # -&gt; bool
+# 1) runs the CORE validation suite [1]-[21] (proves the core is untouched);
+# 2) met-layer free-energy identity (DeltaG_total == bulk + surface + config);
+# 3) runner end-to-end at one point (favourability in [0,1], confidence in [0,1]).</code></pre>
+<p>Or from the CLI: <code>python met_h2o_nucleation.py --validate</code>.</p>
+<p>The full 24-test suite (20 mandatory + 4 bonus, each labelled math / num / ref / reg) lives in
+<strong><code>test_met_nucleation.py</code></strong>:</p>
+<pre><code>python test_met_nucleation.py</code></pre>
+</section>
+<section id="s14">
+<h2><span class="num">§14</span>Command-line reference</h2>
+<pre><code>python met_h2o_nucleation.py [--validate]
+        [--T K] [--P Pa] [--RH %] [--p-v Pa]
+        [--phase-mode auto|liquid|ice|both]
+        [--mode homogeneous|heterogeneous]
+        [--theta DEG] [--r-ref m] [--gradT K/m]
+        [--w m/s] [--LWC kg/m3] [--IWC kg/m3]
+        [--dt s] [--Vcell m3]
+        [--outdir DIR] [--json PATH] [--summary]</code></pre>
+<div class="tablewrap"><table>
+<thead><tr><th>Flag</th><th>Default</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>--validate</code></td><td>off</td><td>run the core validation suite [1]-[21] + met-layer self-checks; exit 0/1</td></tr>
+<tr><td><code>--T</code></td><td>260.0</td><td>ambient temperature [K]</td></tr>
+<tr><td><code>--P</code></td><td>70000.0</td><td><strong>total</strong> pressure [Pa]</td></tr>
+<tr><td><code>--RH</code></td><td>—</td><td>relative humidity [%] (mode A; cross-checked if others given)</td></tr>
+<tr><td><code>--p-v</code></td><td>—</td><td>vapour <strong>partial</strong> pressure [Pa] (direct; alternative to <code>--RH</code>)</td></tr>
+<tr><td><code>--phase-mode</code></td><td><code>auto</code></td><td><code>auto</code> / <code>liquid</code> / <code>ice</code> / <code>both</code></td></tr>
+<tr><td><code>--mode</code></td><td><code>homogeneous</code></td><td><code>homogeneous</code> / <code>heterogeneous</code></td></tr>
+<tr><td><code>--theta</code></td><td>45 (THETA0)</td><td>heterogeneous contact angle in <strong>degrees</strong> — <strong>brentq fallback only</strong>; θ is <em>solved</em> by Eq. 17 and reported as <code>contact_angle_deg</code></td></tr>
+<tr><td><code>--r-ref</code></td><td><code>R_REF_DEFAULT</code> (1e-7)</td><td>continuation radius [m]</td></tr>
+<tr><td><code>--gradT</code></td><td>—</td><td>requested thermal gradient [K/m] (else Brent-solved by the closure)</td></tr>
+<tr><td><code>--w</code></td><td>—</td><td>vertical velocity [m/s]</td></tr>
+<tr><td><code>--LWC</code></td><td>—</td><td>liquid water content [kg/m³]</td></tr>
+<tr><td><code>--IWC</code></td><td>—</td><td>ice water content [kg/m³]</td></tr>
+<tr><td><code>--dt</code></td><td>—</td><td>microphysics timestep [s] (enables <code>expected_events</code>)</td></tr>
+<tr><td><code>--Vcell</code></td><td>—</td><td>grid-cell volume [m³] (enables <code>expected_events</code>)</td></tr>
+<tr><td><code>--outdir</code></td><td><code>out_met_nucleation</code></td><td>output directory</td></tr>
+<tr><td><code>--json</code></td><td>—</td><td>write the full JSON report to this path</td></tr>
+<tr><td><code>--summary</code></td><td>off</td><td>print the compact one-row-per-phase table shown below <strong>instead of</strong> the default full 48-field vertical report</td></tr>
+</tbody></table></div>
+<p>Humidity is accepted as <code>--RH</code>, <code>--p-v</code>, (or <code>y_v</code>/<code>r_mix</code>/<code>q_v</code>
+via the API); if several are given they are cross-checked (≤1 % relative). At least one is required. Phase
+admissibility: liquid iff <code>S_w &gt; 1</code>, ice iff <code>S_i &gt; 1</code>; <code>both</code> computes
+regardless; <code>auto</code> reports only the admissible phase(s) and the kinetically dominant one.</p>
+
+<h3>14.1 CLI cases with verified output</h3>
+<p>The runs below were executed from the repo root with the <code>--summary</code> flag and their terminal output
+captured verbatim. <code>--summary</code> prints the compact one-row-per-phase table (<code>status</code>,
+saturation ratios, solved gradient, 2nd-order critical radius, <code>log10 I</code>, dominant phase, the four
+favourability indices, the diagnostic class, and <code>expected_events</code>). Without <code>--summary</code> the
+CLI instead prints the <strong>full 48-field vertical report</strong> (one field per line, under a per-phase
+header), which is what is written verbatim to <code>--json</code>. The summary table and the full report carry the
+same values; only the layout differs.</p>
+
+<p class="lead-in">Variable key — every column in the example terminal blocks below:</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Column</th><th>Unit</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>phase</code></td><td>—</td><td><code>liquid</code> (condensation) or <code>ice</code> (deposition)</td></tr>
+<tr><td><code>status</code></td><td>—</td><td><code>ok</code> if supersaturated (S&gt;1) and the closure solved; <code>subsaturated</code> if S&lt;1</td></tr>
+<tr><td><code>S_w</code></td><td>—</td><td>saturation ratio wrt <strong>water</strong>; &gt;1 ⇒ liquid supersaturated</td></tr>
+<tr><td><code>S_i</code></td><td>—</td><td>saturation ratio wrt <strong>ice</strong>; at T&lt;0 °C, <code>S_i &gt; S_w</code></td></tr>
+<tr><td><code>gradT</code></td><td>K/m</td><td>thermal gradient: the Brent-solved closure value (or the <code>--gradT</code> you prescribed)</td></tr>
+<tr><td><code>rC2nd</code></td><td>m</td><td><strong>2nd-order critical radius</strong> (Eq.39b parabola root); micrometre order at <code>r_ref=1e-7</code></td></tr>
+<tr><td><code>log10I</code></td><td>log₁₀(m⁻³s⁻¹)</td><td>base-10 nucleation rate. Compare across phases to read kinetic competition</td></tr>
+<tr><td><code>dominant</code></td><td>—</td><td>kinetically dominant phase (larger <code>I</code>); <code>none</code> when both subsaturated</td></tr>
+<tr><td><code>rain</code></td><td>0–1</td><td>rain (warm condensation/coalescence) favourability; combines <code>S_w</code> with cold factor</td></tr>
+<tr><td><code>snow</code></td><td>0–1</td><td>snow (vapour deposition) favourability; driven by <code>S_i</code> and cold factor</td></tr>
+<tr><td><code>graup</code></td><td>0–1</td><td>graupel (riming/accretion) favourability; needs supercooled liquid + ice together</td></tr>
+<tr><td><code>hail</code></td><td>0–1</td><td>hail (deep wet growth) favourability; the most demanding. <strong>Never</strong> set high solely because <code>I</code> is high</td></tr>
+<tr><td><code>class</code></td><td>—</td><td>diagnostic class: <code>mixed_phase</code>, <code>condensation_favorable</code>, <code>subsaturated</code>, …</td></tr>
+<tr><td><code>exp_events</code></td><td>count</td><td><code>expected_events = I · dt · V_cell</code>; <code>undetermined</code> when <code>--dt</code>/<code>--Vcell</code> absent</td></tr>
+</tbody></table></div>
+<p class="note">The four favourability indices are <strong>diagnostic flags, not forecasts</strong>: they combine
+nucleation tendency with whatever dynamics/microphysics were supplied and carry a confidence + caveat. When
+dynamics are absent they reflect thermodynamic favourability only (LOW confidence). Hydrometeor growth is not modelled.</p>
+
+<p class="lead-in">Case 1 — both phases, supersaturated, with dynamics + expected events.</p>
+<p>The canonical reference point: 260 K, 700 hPa, 110 % RH over water, a modest updraft, supercooled LWC/IWC, and a timestep × cell volume so <code>expected_events</code> is determined.</p>
+<pre><code>python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --Vcell 1e6 --summary</code></pre>
+<div class="term-bar">terminal</div>
+<div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class       | exp_events</span>
+  liquid | <span class="ok">ok</span>     | 1.10 | 1.25 | 74.33 | 5.11e-06 | 53.10  | liquid   | 0.600 | 0.607 | 0.555 | 0.386 | mixed_phase | 7.61e+60
+  ice    | <span class="ok">ok</span>     | 1.10 | 1.25 | 148.1 | 4.20e-06 | 49.08  | liquid   | 0.600 | 0.607 | 0.555 | 0.386 | mixed_phase | 7.20e+56</div>
+<p class="note"><strong>Read.</strong> Both phases supersaturated (S_w=1.10, S_i=1.25). Liquid wins kinetically
+(log₁₀I 53.1 vs 49.1); r_C,2nd ≈ 5.1e-6 m (liquid), 4.2e-6 m (ice). With dt=60 s and V_cell=1e6 m³,
+<code>expected_events = I·dt·V_cell</code> is enormous (≈7.6e60 liquid) — nucleation is not the bottleneck here;
+growth is (unmodelled). Class is <code>mixed_phase</code> (supersaturated wrt both phases, T&lt;0 °C).</p>
+
+<p class="lead-in">Case 2 — auto phase mode (dominant phase reported).</p>
+<p>Same state, but <code>--phase-mode auto</code>: both admissible phases are computed and the kinetically dominant one is reported. Without <code>--dt/--Vcell</code>, <code>expected_events</code> is <code>"undetermined"</code>.</p>
+<pre><code>python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode auto --summary</code></pre>
+<div class="term-bar">terminal</div>
+<div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class       | exp_events</span>
+  liquid | <span class="ok">ok</span>     | 1.10 | 1.25 | 74.33 | 5.11e-06 | 53.10  | liquid   | 0.750 | 0.776 | 0.776 | 0.664 | mixed_phase | undetermined
+  ice    | <span class="ok">ok</span>     | 1.10 | 1.25 | 148.1 | 4.20e-06 | 49.08  | liquid   | 0.750 | 0.776 | 0.776 | 0.664 | mixed_phase | undetermined</div>
+<p class="note"><strong>Read.</strong> <code>dominant_phase = liquid</code> (Δlog₁₀I ≈ 4 decades). <code>expected_events</code> is <code>"undetermined"</code> because no timestep/cell volume was supplied.</p>
+
+<p class="lead-in">Case 3 — ice-only, RH = 130 %.</p>
+<p>Force the ice phase and drive it hard against the sublimation curve (S_i = 1.51). Useful for cirrus / ice-cloud regimes.</p>
+<pre><code>python met_h2o_nucleation.py --T 258.15 --P 70000 --RH 130 --phase-mode ice --summary</code></pre>
+<div class="term-bar">terminal</div>
+<div class="term"><span class="dim">  phase | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class       | exp_events</span>
+  ice   | <span class="ok">ok</span>     | 1.30 | 1.51 | 147   | 4.20e-06 | 49.08  | ice      | 1.000 | 0.792 | 0.792 | 0.687 | mixed_phase | undetermined</div>
+<p class="note"><strong>Read.</strong> Only ice is computed; <code>dominant = ice</code> (no competitor). RH_i is 1.51
+by construction (RH = 130 % wrt water ⇒ S_i = 1.51 at 258.15 K); RH_w (=1.30) is still reported for cross-reference.
+rain favourability saturates at 1.0 because the warm-rain supersaturation factor <code>(S_w−1)/0.20</code> clips at 1
+— a <em>thermodynamic</em> rain favourability, not a rain forecast.</p>
+
+<p class="lead-in">Case 4 — heterogeneous nucleation, θ solved by Ferreira Eq. 17.</p>
+<p>Switch to heterogeneous mode. The nucleation angle θ is no longer fixed: the core solves it self-consistently from Eq. 17 (<code>r_C,Het/r_C,Hom</code>) and reports it as <code>contact_angle_deg</code>. Compare log₁₀I against Case 2 (homogeneous).</p>
+<pre><code>python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --mode heterogeneous --theta 60 --summary</code></pre>
+<div class="term-bar">terminal</div>
+<div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class       | exp_events</span>
+  liquid | <span class="ok">ok</span>     | 1.10 | 1.25 | 74.33 | 5.11e-06 | 50.93  | liquid   | 0.750 | 0.776 | 0.776 | 0.664 | mixed_phase | undetermined
+  ice    | <span class="ok">ok</span>     | 1.10 | 1.25 | 148.1 | 4.20e-06 | 46.91  | liquid   | 0.750 | 0.776 | 0.776 | 0.664 | mixed_phase | undetermined</div>
+<p class="note"><strong>Read.</strong> The solved <code>contact_angle_deg ≈ 180°</code>: the core/model carries
+<strong>no substrate (aerosol) surface energies</strong> (γ_AC, γ_BC), so the Eq. 17 self-consistency has only the
+trivial homogeneous-limit root θ = π. The supplied <code>--theta 60</code> is the brentq fallback and is
+<strong>not</strong> used here. log₁₀I drops ~2.2 decades vs Case 2 (53.10→50.93 liquid) because the heterogeneous
+rate uses the solved-θ barrier/prefactor (full-sphere geometry at θ = π), not a fixed 60° cap. r_C,2nd is unchanged
+— it comes from the validated core closure, independent of the contact angle.</p>
+
+<p class="lead-in">Case 5 — prescribed thermal gradient (∇T = 1e3 K/m).</p>
+<p>Override the closure: prescribe the gradient instead of Brent-solving it. A steeper gradient shrinks the continuation radius and shifts the local state.</p>
+<pre><code>python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --gradT 1e3 --summary</code></pre>
+<div class="term-bar">terminal</div>
+<div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class       | exp_events</span>
+  liquid | <span class="ok">ok</span>     | 1.10 | 1.25 | 1101  | 1.34e-06 | 51.94  | liquid   | 0.750 | 0.776 | 0.776 | 0.664 | mixed_phase | undetermined
+  ice    | <span class="ok">ok</span>     | 1.10 | 1.25 | 1142  | 1.52e-06 | 48.20  | liquid   | 0.750 | 0.776 | 0.776 | 0.664 | mixed_phase | undetermined</div>
+<p class="note"><strong>Read.</strong> Forcing ∇T = 1e3 K/m (≈14× the solved value of Case 2) collapses r_C,2nd
+from ~5.1e-6 m to ~1.3e-6 m and lowers log₁₀I by ~1.2 decades. The saturation ratios are unchanged (they depend on
+T and p_v, not the gradient). This is the sensitivity lever: the gradient is an <em>independent</em> control, not a
+consequence of supersaturation.</p>
+<p class="lead-in">Case 6 — subsaturated state (no nucleation).</p>
+<p>At 80 % RH both phases are subsaturated. In <code>auto</code> mode the tool must not fabricate a rate: it returns <code>status = subsaturated</code>, NaN nucleation fields, and <code>dominant = none</code>.</p>
+<pre><code>python met_h2o_nucleation.py --T 258.15 --P 70000 --RH 80 --phase-mode auto --summary</code></pre>
+<div class="term-bar">terminal</div>
+<div class="term"><span class="dim">  phase  | status       | S_w  | S_i  | gradT  | rC2nd  | log10I | dominant | rain  | snow  | graup | hail  | class        | exp_events</span>
+  liquid | <span class="bad">subsaturated</span> | 0.80 | 0.93 | undet. | undet. | undet. | none     | 0.000 | 0.125 | 0.125 | 0.188 | subsaturated | undetermined
+  ice    | <span class="bad">subsaturated</span> | 0.80 | 0.93 | undet. | undet. | undet. | none     | 0.000 | 0.125 | 0.125 | 0.188 | subsaturated | undetermined</div>
+<p class="note"><strong>Behaviour.</strong> S_w = 0.80, S_i = 0.93 — both below 1. <code>status = "subsaturated"</code>,
+all nucleation fields <code>"undetermined"</code>, <code>dominant = "none"</code>. The favourability indices fall to
+their thermodynamic floor (no supersaturation, no nucleation tendency) and the caveat is attached. No silent caps, no
+forced convergence. (In <code>both</code> mode the thermal closure still solves — it is a thermal-field closure
+independent of p_v — so use <code>auto</code> to surface the subsaturated status.)</p>
+
+<p class="lead-in">Case 7 — vapour partial pressure directly (p_v = 500 Pa).</p>
+<p>Skip RH and supply the vapour partial pressure directly. At 260 K this is strongly supersaturated wrt both phases (S_w = 2.25).</p>
+<pre><code>python met_h2o_nucleation.py --T 260 --P 70000 --p-v 500 --phase-mode both --summary</code></pre>
+<div class="term-bar">terminal</div>
+<div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class       | exp_events</span>
+  liquid | <span class="ok">ok</span>     | 2.25 | 2.55 | 74.33 | 5.11e-06 | 53.10  | liquid   | 1.000 | 0.776 | 0.776 | 0.664 | mixed_phase | undetermined
+  ice    | <span class="ok">ok</span>     | 2.25 | 2.55 | 148.1 | 4.20e-06 | 49.08  | liquid   | 1.000 | 0.776 | 0.776 | 0.664 | mixed_phase | undetermined</div>
+<p class="note"><strong>Read.</strong> <code>--p-v 500</code> Pa ⇒ S_w = 500/P_sat,w(260 K) = 2.25, S_i = 2.55. The
+rain warm-supersaturation factor saturates at 1.0 (&gt;20 % SS). The solved gradient and r_C,2nd are identical to
+Case 2 — the closure depends on the phase constitutive laws at T_local, not on how humidity was specified. This is
+the mode to use when p_v comes from a forecast field rather than RH.</p>
+
+<p class="lead-in">Case 8 — warm regime (T = 285 K, RH = 102 %).</p>
+<p>Above freezing: liquid is slightly supersaturated, ice is <em>sub</em> saturated (S_i = 0.91). The diagnostic class flips to <code>condensation_favorable</code> and the cold-type indices collapse.</p>
+<pre><code>python met_h2o_nucleation.py --T 285 --P 90000 --RH 102 --phase-mode both --w 1.0 --LWC 3e-4 --dt 60 --Vcell 1e6 --summary</code></pre>
+<div class="term-bar">terminal</div>
+<div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class                  | exp_events</span>
+  liquid | <span class="ok">ok</span>     | 1.02 | 0.91 | 79.62 | 5.11e-06 | 53.06  | liquid   | 0.400 | 0.333 | 0.300 | 0.325 | condensation_favorable | 6.96e+60
+  ice    | <span class="ok">ok</span>     | 1.02 | 0.91 | 163.5 | 4.20e-06 | 49.11  | liquid   | 0.400 | 0.333 | 0.300 | 0.325 | condensation_favorable | 7.71e+56</div>
+<p class="note"><strong>Read.</strong> T &gt; 273.15 K, S_w = 1.02 (slight supersaturation), S_i = 0.91 (ice
+subsaturated). Class = <code>condensation_favorable</code> (warm, supersaturated wrt water only). The
+<code>cold</code> factor <code>(273.15−T)/40</code> is 0, so snow/graupel/hail fall to their warm-floor.
+<code>expected_events</code> is determined (dt + Vcell given). Ice is still computed in <code>both</code> mode even
+though it is not admissible — useful for comparison; <code>auto</code> would drop it.</p>
+
+<p class="lead-in">Case 9 — self-validation (<code>--validate</code>).</p>
+<p>Run the core validation suite [1]-[21] (proving the guarded core is untouched) plus the met-layer self-checks (free-energy identity, runner end-to-end). Exits 0 on success, 1 on any failure.</p>
+<pre><code>python met_h2o_nucleation.py --validate</code></pre>
+<div class="term-bar">terminal</div>
+<div class="term"><span class="dim">==============================================================================</span>
+SELF-CHECKS  met_h2o_nucleation.py
+<span class="dim">==============================================================================</span>
+[core validation] -&gt; <span class="ok">PASS</span>                      (tests [1]-[21], ice SHA-256 unchanged)
+[decomposition identity] dG_total==sum: <span class="ok">PASS</span>   (free-energy identity)
+[runner end-to-end] 2 phases: <span class="ok">PASS</span>             (favourability in [0,1], confidence in [0,1])
+<span class="dim">------------------------------------------------------------------------------</span>
+SELF-CHECKS <span class="ok">PASS</span></div>
+<p class="note"><strong>Read.</strong> The full 24-test suite (<code>test_met_nucleation.py</code>) is the
+comprehensive check; <code>--validate</code> is the lightweight in-process gate. Both pass in the current build.
+The core SHA-256 guard (test 18) is the proof that this application layer has not modified the validated core.</p>
+
+<p class="lead-in">Case 10 — warm-moist × cold-dry air-mass collision (frontal mixing cloud).</p>
+<p>A warm, moist air mass (T = 293.15 K, RH = 95 %) collides with a cold, dry one (T = 268.15 K, RH = 40 %) at a
+near-surface front (P = 900 hPa). Neither parent is saturated, yet <strong>isobaric mixing</strong> yields a
+supersaturated parcel: mixing temperature and vapour pressure linearly (the Rogers–Yau mixing-cloud construction)
+and scanning the warm-air mass fraction <em>f</em>, the supersaturation peaks at <em>f</em> = 0.50 → T = 280.75 K,
+p_v = 1203.69 Pa, <strong>S_water = 1.153</strong>. That mixed state <em>is</em> the frontal cloud;
+<code>example_met_frontal_collision.py</code> builds it and diagnoses it.</p>
+<pre><code>python met_h2o_nucleation.py --T 280.75 --P 90000 --p-v 1203.69 --phase-mode both --w 1.5 --LWC 5e-4 --dt 60 --Vcell 1e6 --summary</code></pre>
+<div class="term-bar">terminal</div>
+<div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | theta_deg | dominant | rain  | snow  | graup | hail  | class     | theta_model   | exp_events</span>
+  liquid | <span class="ok">ok</span>     | 1.15 | 1.07 | 78.71 | 5.11e-06 | 53.05  | 90.04     | liquid   | 0.641 | 0.452 | 0.431 | 0.375 | warm_rain | ferreira_eq17 | 6.79e+60
+  ice    | <span class="ok">ok</span>     | 1.15 | 1.07 | 160.8 | 4.20e-06 | 49.10  | 90.03     | liquid   | 0.641 | 0.452 | 0.431 | 0.375 | warm_rain | ferreira_eq17 | 7.63e+56</div>
+<p class="note"><strong>Read.</strong> The collision is not itself a tool input — it is encoded as the
+<em>mixed parcel</em> it produces. Both parents were subsaturated (RH 95 % and 40 %), yet the mixture reaches
+S_water = 1.15 because e_sat(T) is convex and the straight mixing line bulges above it: this is mixing fog /
+frontal cloud. T = 280.75 K &gt; 273.15 K, so the class is <code>warm_rain</code> and liquid dominates (log₁₀I
+53.05 vs 49.10 for ice); ∇T is solved by the thermal closure (78.7 K/m liquid). Do <strong>not</strong> map the
+synoptic front's ∇T onto <code>--gradT</code>: that field is the local interface gradient (validated 1–10⁴ K/m),
+not the ~10⁻³ K/m synoptic gradient.</p>
+</section>
+
+<section id="s15">
+<h2><span class="num">§15</span>Examples</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>Script</th><th>Demonstrates</th></tr></thead>
+<tbody>
+<tr><td><code>example_met_single_state.py</code></td><td>one state (T=260 K, P=700 hPa, RH=110 %, both phases) → full 48-field report + JSON/CSV/NetCDF + <code>favorability_bars.png</code></td></tr>
+<tr><td><code>example_met_vertical_profile.py</code></td><td>20-level hydrostatic profile → per-level reports, CSV + <code>vertical_profile.png</code> + JSON; subsaturated levels handled</td></tr>
+<tr><td><code>example_met_xarray_netcdf.py</code></td><td>build an <code>xarray.Dataset</code>, NetCDF3 round-trip (scipy engine), per-level reports, structured xarray/NetCDF output</td></tr>
+<tr><td><code>example_met_figures.py</code></td><td>the full figure suite (P_eq,shift surface, Γ &amp; r_C vs ∇T, ΔG vs r, rates vs T, vertical profile, favourability bars)</td></tr>
+<tr><td><code>example_met_frontal_collision.py</code></td><td>warm-moist × cold-dry air-mass collision → isobaric mixing to the supersaturated frontal-cloud state → both-phase nucleation report + JSON/CSV (see Case 10)</td></tr>
+</tbody></table></div>
+<pre><code># run from the repo root (examples auto-write into out_met_nucleation/)
+python example_met_single_state.py
+python example_met_vertical_profile.py
+python example_met_xarray_netcdf.py
+python example_met_figures.py
+python example_met_frontal_collision.py</code></pre>
+</section>
+
+<section id="s16">
+<h2><span class="num">§16</span>Conventions</h2>
+<ul>
+<li><strong>Units:</strong> all internal quantities are SI.</li>
+<li><strong>Pressures:</strong> <code>P</code>/<code>P_total_Pa</code> = total atmospheric pressure; <code>p_v</code> = water vapour partial pressure; <code>P_eq_*</code> = phase equilibrium (saturation) pressure; <code>P_eq_shift</code> = shifted equilibrium pressure P_sat,phase(T_local).</li>
+<li><strong>Sign conventions</strong> (in <code>metadata.sign_conventions</code>): <code>DeltaS_bulk &lt; 0</code> (volumetric entropy, condensible minus vapour); <code>DeltaG_V &lt; 0</code> drives nucleation; <code>DeltaP_eq = P_eq_classical − P_eq_shift &gt; 0</code> under cooling; <code>cooling_rate &lt; 0</code> means cooling.</li>
+<li><strong>Heterogeneous geometry:</strong> <code>f(θ) = 2 − 3 cos θ + cos³ θ</code> (un-normalised 0..4); factor <code>f/4</code> (0..1); homogeneous limit θ = π → f/4 = 1.</li>
+<li><strong>Gibbs-Thomson:</strong> <code>GT = r_C · ΔT / 2</code> (core convention; <strong>not</strong> 4πr²g).</li>
+<li><strong>Liquid surface:</strong> Tolman curvature <code>γ(r) = γ∞/(1 + 2δ_T/r)</code>.</li>
+<li><strong>Ice surface stress:</strong> Shuttleworth / Gurtin-Murdoch <code>τ = γ + r·∂γ/∂r</code> (distinct from the liquid <code>τ = γ</code>).</li>
+</ul>
+</section>
+
+<section id="s17">
+<h2><span class="num">§17</span>Validity ranges &amp; what remains hypothesis</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>Quantity</th><th>Validity</th></tr></thead>
+<tbody>
+<tr><td>T ambient</td><td>233..373 K (ice 233..273; liquid 233..647)</td></tr>
+<tr><td>gradT</td><td>1..1e4 K/m validated; beyond = extrapolation</td></tr>
+<tr><td>r continuation</td><td>1e-9..1e-2 m</td></tr>
+<tr><td>Psat water</td><td>IAPWS Wagner, <strong>extended below triple point</strong> (extrapolated, stated)</td></tr>
+<tr><td>Psat ice</td><td>Goff-Gratch, anchored at the triple point</td></tr>
+</tbody></table></div>
+<p><strong>Remains hypothesis (not validated against observations):</strong> the favourability indices
+(transparent documented weights, not tuned), <code>expected_events</code> (well-mixed cell + single-step Poisson),
+the sigmoid nucleation-tendency mapping, the self-consistent θ at r_C, and IAPWS below the triple point.</p>
+<p><strong>Out of scope (explicitly stated):</strong> hydrometeor growth (condensation/deposition,
+collision-coalescence, accretion, riming, melting/refreezing). A high nucleation rate never by itself implies rain
+or hail.</p>
+<p>For the full hypotheses table (H1–H17) and the CNT-vs-1st-vs-2nd comparison see
+<code>MET_NUCLEATION_HYPOTHESES.md</code>. For an operational rain/hail forecast the module additionally requires:
+vertical-velocity / CAPE / residence-time profiles, LWC/IWC + size distributions + growth rates + melting/refreezing,
+CCN/INP/INAS spectra, the full T/q profile + freezing level + cloud depth, and the microphysical timestep + cell volume.</p>
+</section>
+
+<section id="s18">
+<h2><span class="num">§18</span>Troubleshooting</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>Symptom</th><th>Cause &amp; fix</th></tr></thead>
+<tbody>
+<tr><td><code>ModuleNotFoundError: het_contact_angle</code> (or the core)</td><td>Run from the cloned repo root. <code>het_contact_angle.py</code> and the <code>unified_h2o_nucleation_climate/</code> core are bundled there; if you copied only <code>met_h2o_nucleation.py</code> elsewhere, copy the siblings too or put the repo root on <code>PYTHONPATH</code>.</td></tr>
+<tr><td><code>--validate</code> → <code>ice reference script not found</code> / <code>VALIDATION FAILED</code></td><td>The SHA-256 guard needs the two reference models at the repo root, one level above <code>unified_h2o_nucleation_climate/</code>. They are bundled; if you copied only the module, copy those two files too.</td></tr>
+<tr><td><code>ImportError</code> for <code>scipy</code> or <code>matplotlib</code></td><td>Both are <strong>required</strong> — the bundled core imports them at load. <code>pip install -r requirements.txt</code>. matplotlib uses the headless <code>Agg</code> backend, so no display is needed.</td></tr>
+<tr><td>NetCDF read/write warns about the engine or fails</td><td><code>to_netcdf</code>/<code>from_netcdf</code> fall back <code>netcdf4 → h5netcdf → scipy</code>; with only scipy present you get NetCDF3. <code>pip install netCDF4</code> for NetCDF4/HDF5.</td></tr>
+<tr><td><code>from_grib</code> raises <code>RuntimeError</code></td><td>GRIB ingestion needs <code>cfgrib</code> + <code>eccodes</code> (<code>pip install cfgrib eccodes</code>).</td></tr>
+<tr><td>Every physics field is <code>undetermined</code>, <code>status = subsaturated</code></td><td>The state is below saturation (S&lt;1) in <code>auto</code>/single-phase mode — correct behaviour, not an error. Raise <code>--RH</code>/<code>--p-v</code>, or use <code>--phase-mode both</code> to force the closure regardless.</td></tr>
+<tr><td><code>r_critical_2nd_m</code> comes out sub-micron</td><td>Usually a bad <code>--r-ref</code>; the default <code>1e-7 m</code> yields micrometre-order critical radii (see §17).</td></tr>
+<tr><td>Unicode / <code>cp1252</code> errors when printing on Windows</td><td>The examples wrap stdout as UTF-8. If you print reports yourself, set <code>PYTHONUTF8=1</code> or reconfigure stdout to UTF-8.</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="s19">
+<h2><span class="num">§19</span>Citation &amp; license</h2>
+<p>If you use this tool in academic work, please cite the underlying shifted-equilibrium framework:</p>
+<p class="note">Ferreira, <em>Physica B: Condensed Matter</em> <strong>695</strong> (2024) 416494; and the MRS
+Meeting 2026 contribution on the meteorological water-phase nucleation application layer.</p>
+<pre><code>@article{ferreira2024shifted,
+  author  = {Ferreira},          % TODO: complete the author list
+  title   = {},                   % TODO: article title
+  journal = {Physica B: Condensed Matter},
+  volume  = {695},
+  pages   = {416494},
+  year    = {2024},
+  doi     = {}                     % TODO
+}</code></pre>
+<p>Complete the <code>author</code> / <code>title</code> / <code>doi</code> fields from the published reference.</p>
+<p><strong>License.</strong> No <code>LICENSE</code> file is currently included, which by default means
+<strong>all rights reserved</strong>. To permit reuse, add a licence (e.g. MIT, BSD-3-Clause, Apache-2.0); until
+then, contact the author for permission. The bundled core and its reference models are integrity-guarded and marked read-only.</p>
+</section>
+
+<section id="s20">
+<h2><span class="num">§20</span>File map</h2>
+<p class="note">Updated for the 2026-08-20 reorganization. API names are unchanged; only paths moved. See
+<code>MIGRATION_MANIFEST.md</code> for the full old→new mapping.</p>
+<div class="arch">src/met_water_nucleation/
+    __init__.py                    package facade (import met_water_nucleation as M)
+    cli.py / __main__.py           console entry point + `python -m …`
+    _engine/                       IMMUTABLE bundle (read-only, SHA-256 guarded)
+        met_h2o_nucleation.py        the application/diagnosis module
+        het_contact_angle.py         heterogeneous contact-angle models
+        Nucleation_model_H2O_vapour_solid_Sim_2026_paper.py   ice reference model
+        Nucleation_model_H2O_vapour_liquid_Sim_2026.py        liquid reference model
+        unified_h2o_nucleation_climate/
+            unified_h2o_nucleation_climate.py   the validated core (DO NOT MODIFY)
+
+tests/test_met_nucleation.py       24-test validation suite
+examples/                          single_state, vertical_profile, xarray_netcdf,
+                                   figures, frontal_collision
+configs/                           declarative scenario YAMLs
+scripts/                           run_validation, regenerate_outputs
+docs/                              this manual (+.html), hypotheses, architecture, migration guide
+outputs/                           generated outputs (outputs/&lt;scenario&gt;/&lt;run-id&gt;/)
+
+met_h2o_nucleation.py              BACKWARD-COMPAT SHIM (repo root) — delegates to the package CLI</div>
+</section>
+<div class="part">
+  <p class="pk">Part II</p>
+  <h2>The 3D flow solver</h2>
+  <p class="psub">A CPU 3D Boussinesq fluid-flow application built <em>around</em> the validated nucleation engine.
+  It simulates a 100 m mixing chamber — warm/humid west inflow, cold/dry east inflow, a uniform pressure drop,
+  gravity along −z — and evaluates the second-order nucleation kernel one-way (diagnostic) over the mixing zone.
+  The engine is treated read-only; the flow layer only feeds the kernel <code>(T, P, p_v, |∇T|)</code> and reads
+  its outputs. Two-way microphysics is a gated Batch-2 extension; Batch 1 stops at the one-way verification gate.</p>
+</div>
+
+<section id="s21">
+<h2><span class="num">§21</span>The flow package</h2>
+<p><code>meteorological_flow</code> is a sibling package under <code>src/</code>, installed alongside the engine
+and importing it read-only via <code>import met_water_nucleation as M</code>. It does not modify any validated
+equation. The package layout:</p>
+<div class="arch">src/meteorological_flow/
+  __init__.py            version, public exports
+  config.py              load/validate YAML -&gt; dataclass; apply_overrides
+  grid.py                staggered C-grid, metrics, operators (grad, div, interp)
+  state.py               FlowState dataclass (numpy fields), diagnose p_v/RH/S/θ↔T
+  boundary_conditions.py inflow/outlet/wall/top BCs, mass-balanced top outflow, pressure drop
+  thermodynamics.py      θ↔T (exergy), p_v↔q_v, RH/S via engine SaturationProperties
+  advection.py           finite-volume upwind (default) / 2nd-order MUSCL+minmod
+  diffusion.py           explicit Laplacian viscosity &amp; scalar diffusivity
+  pressure_solver.py     projection: constant sparse Laplacian, cached CG/splu
+  buoyancy.py            moist Boussinesq buoyancy on w-momentum
+  nucleation_adapter.py  wraps M.un kernel; direct vs lookup; per-cell &amp; field eval
+  nucleation_lookup.py   precompute/cache/interpolate table over (T,p_v,|∇T|,phase)
+  phase_change.py        Stage2 vapor depletion + Stage3 latent heat (Batch 2, stub)
+  diagnostics.py         meteorological qualifiers + conservation budgets
+  io.py                  xarray/NetCDF(scipy) time-dependent fields, JSON, CSV, restart
+  plotting.py            CPU slices/vectors/quivers (matplotlib)
+  simulation.py          orchestrator: time loop, CFL, stages, output cadence
+  cli.py / __main__.py   build_argparser() + main(argv)-&gt;int; `python -m meteorological_flow`
+
+configs/cold_dry_vs_warm_moist.yaml   reference scenario
+examples/run_reference_demo.py        thin runner
+docs/flow_guide.md       formulation, consequences, limitations, run instructions</div>
+<p>The reference scenario: a 100 m cube, 20³ dev grid (dx=5 m; <strong>not</strong> 100³), 60–120 s duration,
+warm humid west inflow (293 K, 90 % RH, 2 m/s) meeting cold dry east inflow (258 K, 30 % RH, 2 m/s), a 60 Pa
+pressure drop driving a gentle through-flow, gravity along −z, and one-way nucleation over the mixing zone.</p>
+</section>
+
+<section id="s22">
+<h2><span class="num">§22</span>Formulation</h2>
+<h3>22.1 Boussinesq, staggered Arakawa C-grid</h3>
+<p>Density variations enter <strong>only through buoyancy</strong>; the prognostic velocity is incompressible
+(projected each step). Scalars — potential temperature θ, vapour <code>q_v</code>, liquid <code>q_l</code>,
+ice <code>q_i</code>, perturbation pressure <code>p'</code> — live at cell centres; <code>u, v, w</code> on the
+east/north/top faces. z is vertical (gravity −z). Grid metrics and operators (divergence, face gradients, centred
+gradients, Laplacian, centre→face interpolation) are plain numpy finite differences (<code>grid.py</code>).</p>
+<p><strong>Potential temperature θ is the transported conserved scalar</strong>, with</p>
+<div class="eq">T = θ · (P / P0_REF)^(R_d / c_p) ,   P0_REF = 100000 Pa</div>
+<p>so adiabatic lifting cools the parcel (this is how supersaturation by ascent enters). <code>P0_REF</code> is
+the <em>θ reference</em> pressure — <strong>not</strong> the scenario background <code>P0 = 70000 Pa</code> (the two
+are deliberately distinct; conflating them makes the initial <code>T</code> come back ~30 K too warm).</p>
+<p>Moist Boussinesq buoyancy on the w-equation:</p>
+<div class="eq warm">B = g · [ (T − T_ref)/T_ref + 0.61 (q_v − q_v,ref) − (q_l + q_i) ]</div>
+<p>with <code>T_ref, q_v,ref</code> the fixed initial references.</p>
+
+<h3>22.2 Time stepping (Chorin projection)</h3>
+<p>Each step (<code>simulation.py</code>):</p>
+<ol class="steps">
+<li>enforce velocity + scalar BCs; diagnose <code>T, p_v, S, ρ, |∇T|</code>;</li>
+<li><strong>momentum predictor</strong>: viscous diffusion, add buoyancy to <code>w</code>, add the uniform
+pressure-drop body force <code>du/dt = p_drop/(ρ0·Lx)</code> to <code>u</code>, apply linear Rayleigh momentum
+drag <code>u ← u·(1 − γ·dt)</code>. <em>(v1 simplification, documented: advective transport of momentum is
+deferred — see §24.)</em></li>
+<li><strong>project the velocity to divergence-free BEFORE advecting scalars</strong> (Chorin:
+<code>∇²p' = (ρ0/Δt)∇·u*</code>, <code>u ← u* − (Δt/ρ0)∇p'</code>);</li>
+<li><strong>scalar predictor</strong>: advect + diffuse θ, <code>q_v</code> (and <code>q_l, q_i</code> at the
+hydrometeor stage) with the now-solenoidal velocity; clip <code>q_v ≥ 0</code> as a last-resort safety (bookkept as a conservation loss);</li>
+<li>re-enforce BCs; diagnose.</li>
+</ol>
+<p><strong>Adaptive CFL</strong> each step:</p>
+<div class="eq">dt = min( cfl·min(dx)/max(1.25·|u|), 0.5·min(dx)²/(3·max(ν,κ)), dt_max )</div>
+<p>The 1.25 margin sizes <code>dt</code> for the predictor growing the velocity within a step.</p>
+
+<h3>22.3 Pressure solver</h3>
+<p>The 7-point cell-centre Laplacian is assembled <strong>once</strong> as a <code>scipy.sparse</code> matrix
+(<code>A = −∇²</code>, positive semi-definite + a 1e-12 diagonal pin) with all-Neumann BCs. Small grids (≤ ~40³)
+use a cached <code>splu</code> factorisation; larger grids use CG + Jacobi. All-Neumann makes the system singular
+(constant null space); the RHS is mean-subtracted for compatibility and the solution is mean-zeroed, so
+<code>p'</code> has zero mean. The residual and iteration count are reported each step.</p>
+<p class="note"><strong>Sign convention</strong> (a subtle point that bit us during development): with
+<code>A = −∇²</code>, Chorin's <code>∇²p' = +(ρ0/Δt)∇·u</code> requires <code>rhs = −(ρ0/Δt)·div</code>. Boundary
+faces use <code>dp'/dn = 0</code>, so the projection does <strong>not</strong> alter the boundary (inflow
+Dirichlet) velocity.</p>
+
+<h3>22.4 Boundary conditions &amp; the mass-balanced top outflow</h3>
+<ul>
+<li><strong>West / east</strong>: Dirichlet inflow (warm/moist west, cold/dry east, both at 2 m/s into the domain). Inflow scalars are fixed from the configured T/RH via the engine's saturation curves; <code>q_l = q_i = 0</code> at inflows.</li>
+<li><strong>y</strong>: free-slip (zero normal <code>v</code>), zero-gradient scalars.</li>
+<li><strong>z bottom</strong>: free-slip (<code>w = 0</code>).</li>
+<li><strong>z top</strong>: a <strong>mass-balanced outflow</strong> — <code>w_top = (u_warm + u_cold)·Lz/Lx</code>, sized so the net boundary flux is exactly zero. This is what makes the all-Neumann projection yield a genuinely divergence-free (not merely constant-divergence) field, which is the precondition for monotone scalar advection (see §24).</li>
+</ul>
+
+<h3>22.5 Nucleation coupling (one-way / diagnostic, Batch 1)</h3>
+<p>The adapter (<code>nucleation_adapter.py</code>) builds the kernel simulator <strong>once</strong> and calls,
+per cell, <code>sim.evaluate_point(T, P, p_v, r_ref, grad_T_req=|∇T|)</code>, collecting every kernel output
+(<code>ΔT, T_eq_shift, P_eq_shift, γ, ∂γ/∂r, Γ1, Γ2, rC_1st, rC_2nd, ΔG_1st, ΔG_2nd, I, log10I, dominant,
+closure_resid</code>) into grid arrays — the 1st-order / CNT / 2nd-order results are kept <strong>distinct</strong>
+(the kernel exposes <code>rC_1st</code>/<code>rC_2nd</code>, <code>Gamma1</code>/<code>Gamma2</code>,
+<code>DeltaG_1st</code>/<code>DeltaG_2nd</code>).</p>
+<p><strong>One-way means the prognostic state is NOT modified by the microphysics.</strong> The kernel outputs are
+recorded (NetCDF, plots, JSON) but <code>q_v, θ, …</code> are untouched. Two-way coupling is Batch 2, gated on
+this foundation passing its verification.</p>
+<p><strong>Lookup table</strong> (<code>nucleation_lookup.py</code>): the gradient-scan kernel path is too costly
+to call per cell per step, so the outputs are precomputed once over <code>(T, p_v, |∇T|, phase)</code> —
+<code>|∇T|</code> log-spaced — cached to <code>.npz</code>, and interpolated per cell with
+<code>scipy.RegularGridInterpolator</code> (trilinear). Build is parallelised with <code>multiprocessing</code>
+(deterministic: 4-thread ≡ 1-thread exactly). Subgrid structural fields (<code>rC</code>, <code>Gamma</code>, …)
+that the kernel returns as NaN where no embryo forms are <strong>nearest-filled</strong> at the phase boundary so
+interpolation is defined everywhere (a documented parameterization).</p>
+</section>
+
+<section id="s23">
+<h2><span class="num">§23</span>Scientific integrity</h2>
+<ul>
+<li>The validated core (<code>src/met_water_nucleation/_engine/**</code>) is <strong>never modified</strong> — SHA-256-guarded, ruff-excluded. All physics is reused via <code>import met_water_nucleation as M</code>.</li>
+<li>Existing reference results are <strong>not overwritten</strong>; flow outputs go to a separate gitignored <code>outputs/flow_reference/</code> (and <code>out_met_nucleation/</code>).</li>
+<li>1st-order / CNT / 2nd-order results are reported distinctly.</li>
+<li>Parameterizations and extrapolations are <strong>labelled</strong> (see §24).</li>
+<li><strong>Reproducibility</strong>: config + code version + random seed are written into every output (NetCDF global attrs, <code>summary.json</code>).</li>
+</ul>
+</section>
+<section id="s24">
+<h2><span class="num">§24</span>Documented consequences &amp; limitations</h2>
+<p class="lead-in">These are not bugs; they are the honest scope of a Batch-1 demonstration-scale solver. The <code>summary.json</code> report carries this list verbatim.</p>
+<div class="callout">
+<ol>
+<li><strong>Boussinesq</strong>: the imposed <code>ΔP = 30 Pa</code> over 70000 Pa gives adiabatic expansion cooling ~0.1 K — second-order. Supersaturation is dominated by <strong>mixing</strong> and <strong>buoyant lifting</strong>, not by the pressure drop itself. A low-Mach/compressible solver is future work.</li>
+<li><strong>One-way (Batch 1)</strong>: nucleation is diagnostic; the prognostic state is not modified by microphysics. Two-way coupling is a gated Batch-2 step.</li>
+<li><strong><code>|∇T|</code> floored at <code>gmin</code></strong>: the <code>|∇T| → 0</code> limit is the kernel's near-equilibrium result (parameterization), <strong>not</strong> the CNT limit. The CFD Cartesian <code>|∇T|</code> is identified with the kernel's radial <code>|dT/dr|</code> as a first-order subgrid closure (validation test 14 checks the limit).</li>
+<li><strong>Momentum advection deferred</strong> (v1 simplification): the velocity is governed by the body force + buoyancy + diffusion + projection; the <strong>scalars</strong> are advected by the resulting divergence-free velocity (which drives the mixing → supersaturation → nucleation). Fully conservative staggered momentum advection is a Batch-2 upgrade. The projection still enforces <code>∇·u ≈ 0</code>.</li>
+<li><strong>Rayleigh momentum drag</strong> <code>γ = 0.2 /s</code> is a documented bulk subgrid dissipation that bounds the otherwise-unbounded Boussinesq buoyant convection (warm parcels do not cool on ascent, so without a sink the plume accelerates unboundedly). <code>γ = 0</code> disables it.</li>
+<li><strong>Rain/snow/graupel/hail</strong> are reported as thermodynamic / microphysical <strong>favorability</strong> diagnostics, <strong>not</strong> precipitation prediction. Hydrometeor growth (collision-coalescence, riming, melting) is not modelled in Batch 1; a high nucleation rate never by itself implies rain or hail.</li>
+<li><strong>Not operational weather prediction</strong>; demonstration-scale only.</li>
+</ol>
+</div>
+<p class="note">A consequence worth stating plainly: the projected velocity is divergence-free <strong>only because
+the top outflow is mass-balanced</strong>. With two unbalanced inflows the all-Neumann projection leaves a constant
+residual divergence (<code>div(u_new) = mean(div) ≠ 0</code>), and flux-form upwind — monotone <em>only under a
+solenoidal velocity</em> — would then create non-physical scalar extrema. The mass-balanced top outflow makes
+<code>mean(div) = 0</code>, so the projected field is divergence-free everywhere (the reference demo reaches
+<code>divmax ≈ 1e-11</code>).</p>
+</section>
+
+<section id="s25">
+<h2><span class="num">§25</span>Running it</h2>
+<h3>25.1 As a module / console script</h3>
+<pre><code># full one-way reference demo (20^3, builds the lookup once, ~6 min first time;
+# the table is cached and reused on subsequent runs):
+python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 20 --duration 60 --one-way-coupling --output outputs/flow_reference --threads 8
+
+# pure flow (no microphysics), fast sanity check:
+python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 20 --duration 60 --no-microphysics --output outputs/flow_pure
+
+# after `pip install -e .` the console script is available:
+meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 40 --duration 120 --one-way-coupling</code></pre>
+
+<h3>25.2 Flags</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>flag</th><th>meaning</th></tr></thead>
+<tbody>
+<tr><td><code>--config PATH</code></td><td>YAML scenario (default <code>configs/cold_dry_vs_warm_moist.yaml</code>)</td></tr>
+<tr><td><code>--grid-resolution {20,40,50}</code></td><td>override <code>nx=ny=nz</code> (20³ dev default, dx=5 m; <strong>not</strong> 100³)</td></tr>
+<tr><td><code>--duration S</code></td><td>override simulated duration</td></tr>
+<tr><td><code>--output DIR</code></td><td>output directory</td></tr>
+<tr><td><code>--output-interval N</code></td><td>snapshot + nucleation cadence in steps</td></tr>
+<tr><td><code>--threads N</code></td><td>multiprocessing threads for the lookup build</td></tr>
+<tr><td><code>--one-way-coupling</code></td><td>stage = one_way (diagnostic nucleation)</td></tr>
+<tr><td><code>--no-microphysics</code></td><td>stage = none (pure flow)</td></tr>
+<tr><td><code>--diagnostic-only</code></td><td>alias for one-way</td></tr>
+<tr><td><code>--method direct|lookup</code></td><td>kernel evaluation method (lookup required at scale)</td></tr>
+<tr><td><code>--restart PATH</code></td><td>restart from a <code>.npz</code> checkpoint</td></tr>
+<tr><td><code>--dry-run</code></td><td>print the plan (grid, dt estimate, table size) and exit</td></tr>
+<tr><td><code>--validate</code></td><td>run the flow validation suite, exit 0/1</td></tr>
+</tbody></table></div>
+
+<h3>25.3 Python API</h3>
+<pre><code>from meteorological_flow import SimulationConfig, from_yaml, apply_overrides, Simulation
+cfg = apply_overrides(from_yaml("configs/cold_dry_vs_warm_moist.yaml"),
+                      grid_resolution=20, duration=60, one_way=True)
+report = Simulation(cfg).run()      # -&gt; summary dict (also written to summary.json)</code></pre>
+<p>A thin runner is <code>examples/run_reference_demo.py</code>.</p>
+</section>
+
+<section id="s26">
+<h2><span class="num">§26</span>Outputs &amp; the verification gate</h2>
+<p>All outputs go to the output directory (default <code>outputs/flow_reference/</code>):</p>
+<div class="tablewrap"><table>
+<thead><tr><th>File</th><th>Contents</th></tr></thead>
+<tbody>
+<tr><td><code>flow.nc</code></td><td>time-dependent NetCDF3 (scipy engine), dims <code>(time, z, y, x)</code>: <code>u,v,w,T,T_local_*,P,p_v,RH_*,q_*,S_*,gradT,ΔT,P_eq_shift_*,Γ2_*,rC_2nd_*,log10I_*,dominant_phase,solver_residual,validity_mask,rho</code>. Global attrs carry code version, formulation, P0, seed, ρ0, T_ref, grid, dx/dy/dz, stage.</td></tr>
+<tr><td><code>history.csv</code></td><td>domain-integral budgets (water/energy, mean S, extrema, solver residual) per output cadence</td></tr>
+<tr><td><code>summary.json</code></td><td>wall-clock, memory, n_steps, max CFL, ρ0, T_ref, final stats (extrema, max S, max log10I, nucleation cell counts), final budgets, solver residual, the <strong>limitations list</strong>, and the full config+seed</td></tr>
+<tr><td><code>restart.npz</code></td><td>checkpoint at the output cadence</td></tr>
+<tr><td><code>nucleation_lookup.npz</code></td><td>the cached lookup table (reused across runs)</td></tr>
+<tr><td><code>figures/</code></td><td>horizontal/vertical slices of T, S_w/S_i, p', |u|+vectors, w, |∇T|, log10I(liquid/ice), q_v; budget plots</td></tr>
+</tbody></table></div>
+
+<h3>26.1 Reference demo numbers (20³, 60 s, one-way)</h3>
+<dl class="data">
+<dt>wall clock</dt><dd>35.9 s (excludes the one-time lookup build)</dd>
+<dt>steps</dt><dd>240 · final t = 60.00 s</dd>
+<dt>max CFL</dt><dd>0.271</dd>
+<dt>T range</dt><dd>255.45 .. 293.67 K</dd>
+<dt>max |u|</dt><dd>5.43 m/s · max |w| : 5.05 m/s</dd>
+<dt>max S_w / S_i</dt><dd>1.707 / 1.779</dd>
+<dt>max log10I</dt><dd>liq = 57.88 · ice = 54.23</dd>
+<dt>liq nuc cells</dt><dd>2220 · ice nuc cells : 1820</dd>
+<dt>solver resid</dt><dd>9.5e-14</dd>
+</dl>
+<p>The high <code>log10I</code> is the kernel's honest homogeneous-limit output at the mixing-zone
+supersaturation (<code>S_w ≈ 1.7</code>); it is <strong>not</strong> adjusted for visual plausibility (per the
+integrity constraint). Water/energy "errors" are nonzero because the boundaries are open (mass/energy flux through
+them) — expected and documented, not a conservation failure.</p>
+
+<h3>26.2 Verification (the Batch-1 gate)</h3>
+<p>The spec mandates a verification gate before any two-way coupling:</p>
+<ol class="steps">
+<li><code>python -m pytest tests/</code> — the original 24 nucleation tests <strong>plus</strong> the flow suite (<code>tests/test_grid.py</code>, <code>test_advection.py</code>, <code>test_pressure_projection.py</code>, <code>test_scalar_conservation.py</code>, <code>test_boundary_conditions.py</code>, <code>test_nucleation_adapter.py</code>, <code>test_lookup_accuracy.py</code>, <code>test_reference_scenario.py</code>) all pass.</li>
+<li><code>met_h2o_nucleation.py --validate</code> still PASS (the guarded core is untouched).</li>
+<li><code>python -m meteorological_flow.cli --validate</code> — the flow suite green.</li>
+<li>The 20³ one-way reference demo produces NetCDF + JSON + CSV + PNG and a physically sane report.</li>
+</ol>
+<p class="note"><strong>Batch 2 (gated, next)</strong> — <code>phase_change.py</code>: vapour depletion
+(mass-conserving, <code>q_v ≥ 0</code>) + latent heat (condensation/deposition/freezing/melting signs) + buoyancy
+feedback; then hydrometeor transport + sedimentation; precip favorability diagnostics (labelled, not prediction);
+optional LES/Smagorinsky toward operational microphysics. The gate is passed; Batch 2 is the approved next step,
+not yet started.</p>
+</section>
+
+<footer>
+<p>This unified manual ports the engine reference (<code>docs/MANUAL_met_h2o_nucleation.md</code>) and the flow
+guide (<code>docs/flow_guide.md</code>) into a single document. The validated nucleation core is read-only and
+SHA-256-guarded; the flow layer reuses it via <code>import met_water_nucleation as M</code> and modifies no
+validated equation. Demonstration-scale only — not operational weather prediction.</p>
+</footer>
+</main>
+</div>
+<script>
+const links=[...document.querySelectorAll('.toc a')];
+const secs=[...document.querySelectorAll('section[id]')];
+const obs=new IntersectionObserver(es=>{
+  es.forEach(e=>{ if(e.isIntersecting){
+    const id=e.target.id; links.forEach(l=>l.classList.toggle('active',l.getAttribute('href')==='#'+id));
+  }});
+},{rootMargin:'-10% 0px -75% 0px'});
+secs.forEach(s=>obs.observe(s));
+</script>
+</body>
+</html>

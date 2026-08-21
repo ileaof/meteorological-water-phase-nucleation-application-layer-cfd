@@ -1,0 +1,24 @@
+# Package defaults (MetInput defaults). Not a run scenario by itself.
+met_input:
+  T: 258.15            # K, ambient temperature
+  P: 70000.0           # Pa, total atmospheric pressure
+  rh_reference: water  # water | ice
+  phase_mode: auto     # auto | liquid | ice | both
+  mode: homogeneous    # homogeneous | heterogeneous
+  r_ref: 1.0e-7        # m, continuation radius (R_REF_DEFAULT)
+  # theta: 45         # deg, brentq fallback only (Eq.17 solves theta)
+  # grad_T: null       # K/m, else Brent-solved
+# dynamic / microphysical (all default to None -> "undetermined")
+dynamics:
+  w: null
+  LWC: null
+  IWC: null
+  N_ccn: null
+  N_inp: null
+  cooling_rate: null
+  dt_micro: null
+  cell_volume: null
+  freezing_level: null
+output:
+  outdir: outputs
+  format: [json, csv]

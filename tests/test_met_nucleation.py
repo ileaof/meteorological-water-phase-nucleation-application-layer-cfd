@@ -24,22 +24,18 @@ Run:
     python test_met_nucleation.py
 Exit code 0 = all passed, 1 = at least one failure.
 """
-import sys
-import os
 import math
-import importlib.util
+import os
+import sys
 
 import numpy as np
 
-# -- load the met module (importlib, read-only, resolved next to this file) --
-sys.argv = ["x"]
-_MET = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                    "met_h2o_nucleation.py")
-_spec = importlib.util.spec_from_file_location("met_nuc", _MET)
-M = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(M)
+# The meteorological water-phase nucleation application layer is now the
+# installed package `met_water_nucleation` (see tests/conftest.py for the
+# import-path bootstrap, which does not depend on the working directory).
+import met_water_nucleation as M
 
-# core (already loaded by the met module as M.un)
+# The validated physics core, re-exported by the package as M.un.
 un = M.un
 SaturationProperties = M.SaturationProperties
 AtmosphericInput = M.AtmosphericInput
@@ -515,9 +511,11 @@ def test_b3_xarray_roundtrip():
     met = M.from_xarray(ds)
     runner = MetNucleationRunner(met)
     reps = runner.evaluate_point(float(T[1]), float(P[1]), float(_PV))
-    # write & read NetCDF
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "out_met_nucleation", "_roundtrip_test.nc")
+    # write & read NetCDF (use the system temp dir so the test leaves no
+    # generated-output directory inside the source tree and does not depend
+    # on the working directory)
+    import tempfile
+    path = os.path.join(tempfile.gettempdir(), "met_water_nucleation_roundtrip_test.nc")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     M.to_netcdf(reps, path)
     assert os.path.exists(path)

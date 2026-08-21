@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use this tool, please cite the shifted-equilibrium framework below."
+title: "met_water_nucleation — meteorological water-phase nucleation application layer"
+type: software
+authors:
+  - family-names: Ferreira
+    given-names: "I. L."
+    affiliation: "UFPa / ITEC / FEM"
+preferred-citation:
+  type: article
+  authors:
+    - family-names: Ferreira
+      given-names: "I. L."
+  journal: "Physica B: Condensed Matter"
+  volume: 695
+  pages: "416494"
+  year: 2024
+  # TODO: complete title, full author list and DOI from the published reference.
+notes: "MRS Meeting 2026 contribution on the meteorological water-phase nucleation application layer."

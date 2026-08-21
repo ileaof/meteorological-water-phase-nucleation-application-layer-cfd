@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "met_water_nucleation"
+version = "1.0.0"
+description = "Meteorological water-phase nucleation application layer (Ferreira Eq.39a/39b shifted-equilibrium framework)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "I. L. Ferreira (UFPa / ITEC / FEM)" }]
+keywords = [
+    "nucleation", "water", "ice", "vapour", "atmospheric",
+    "meteorology", "shifted-equilibrium", "gibbs-thomson", "contact-angle",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+]
+# numpy/scipy/matplotlib/xarray are REQUIRED: the bundled core imports numpy,
+# scipy and matplotlib at load time, and the meteorological_flow solver writes
+# its NetCDF output via xarray (scipy engine -> NetCDF3, no netCDF4 needed).
+dependencies = [
+    "numpy>=1.20",
+    "scipy",
+    "matplotlib",
+    "xarray",
+]
+
+[project.optional-dependencies]
+# NetCDF ingestion/export via xarray (scipy engine gives NetCDF3 with no extra).
+netcdf = ["netCDF4"]
+# GRIB ingestion (requires the system eccodes library too).
+grib = ["cfgrib", "eccodes"]
+# Convenience / data-frame helpers.
+pandas = ["pandas"]
+# Optional JIT acceleration for the per-cell nucleation kernel loop
+# (graceful numpy fallback when numba is absent).
+fast = ["numba"]
+# All optional I/O backends together.
+io = ["netCDF4", "h5netcdf", "cfgrib", "eccodes", "pandas"]
+# Development & testing.
+dev = ["pytest>=7", "ruff"]
+
+[project.scripts]
+met-water-nucleation = "met_water_nucleation.cli:main"
+meteorological-flow = "meteorological_flow.cli:main"
+
+[project.urls]
+"Manual" = "docs/MANUAL_met_h2o_nucleation.md"
+"Hypotheses" = "docs/MET_NUCLEATION_HYPOTHESES.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["met_water_nucleation*", "meteorological_flow*", "precip_microphysics*"]
+
+# Ship the immutable engine bundle (the validated core, the two SHA-256-guarded
+# reference scripts and the application modules) with installed copies so that
+# `met-water-nucleation --validate` still finds the reference scripts it guards.
+[tool.setuptools.package-data]
+"met_water_nucleation" = [
+    "_engine/*.py",
+    "_engine/unified_h2o_nucleation_climate/*.py",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+extend-exclude = [
+    "src/met_water_nucleation/_engine",          # immutable bundle — do not lint/edit
+    "src/met_water_nucleation/_engine/unified_h2o_nucleation_climate",
+]

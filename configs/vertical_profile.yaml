@@ -1,0 +1,25 @@
+# Idealised 20-level hydrostatic mid-latitude ascent (500..7000 m).
+# Mirrors examples/vertical_profile.py.
+profile:
+  z: [500, 7000]       # m, endpoints (20 levels)
+  n_levels: 20
+  T0: 285.0            # K, surface
+  P0: 95000.0          # Pa
+  lapse: 6.5e-3        # K/m
+  RH_ground: 80.0      # %
+  RH_top: 105.0        # % (linear ramp)
+  RH_supercooled: 108.0 # % in 2500..4500 m
+  RH_aloft: 95.0       # % above 5500 m
+  w_updraft: 3.0       # m/s in 1500..5000 m
+  w_background: 0.5    # m/s elsewhere
+  LWC_cloud: 5.0e-4    # kg/m^3 in 2500..4500 m
+  IWC_cloud: 2.0e-4    # kg/m^3 above 4000 m
+met_input:
+  phase_mode: both
+  mode: homogeneous
+  dt_micro: 60.0
+  cell_volume: 1.0e6
+output:
+  outdir: outputs/vertical_profile
+  format: [json, csv]
+  figures: [vertical_profile]

@@ -1,0 +1,44 @@
+# Reference configuration for precip_microphysics (single-moment bulk scheme +
+# evidence-based precipitation diagnostics).  Load with:
+#     from precip_microphysics.config import from_yaml
+#     cfg = from_yaml("configs/microphysics_reference.yaml")
+#
+# Every process can be switched off individually; disabling one both removes its
+# tendency AND makes the diagnostics emit the matching reason code, so the
+# confidence model stays honest about what was actually computed.
+
+scheme: single_moment
+
+processes:
+  condensation: true          # saturation adjustment (cloud water)
+  autoconversion: true        # q_c -> q_r (Kessler)
+  accretion: true             # rain collects cloud water
+  rain_evaporation: true      # q_r -> q_v in subsaturated air
+  ice_nucleation: true        # embryo source + Bigg immersion freezing
+  deposition: true            # vapour deposition / sublimation on ice & snow
+  aggregation: true           # q_i -> q_s
+  riming: true                # supercooled q_c onto snow / graupel / hail
+  graupel_conversion: true    # rimed snow -> graupel
+  graupel_melting: true       # q_s, q_g -> q_r above 0 degC
+  hail_growth: true           # hail embryo + wet/dry growth
+  hail_melting: true          # q_h -> q_r below the freezing level
+  sedimentation: true         # terminal fall of q_r, q_s, q_g, q_h
+
+# nucleation-source coupling
+stochastic_nucleation: false  # Poisson embryo count vs mean-field N = J dV dt
+embryo_radius_liquid: 1.0e-6  # m
+embryo_radius_ice: 5.0e-6     # m
+vapour_limited: true          # cap the embryo source at available supersaturation
+activation_pathway: eq39      # eq39 | ccn | homogeneous  (prevents double counting)
+
+# reporting thresholds -- SAFEGUARDS, not process substitutes.  Do not raise
+# these to remove the caveat; implement/enable the missing process instead.
+threshold_rain: 0.50
+threshold_snow: 0.50
+threshold_graupel: 0.50
+threshold_hail: 0.75
+
+# validity / numerical envelope
+T_valid: [233.0, 320.0]       # K
+conservation_tol: 1.0e-9
+seed: 20260821

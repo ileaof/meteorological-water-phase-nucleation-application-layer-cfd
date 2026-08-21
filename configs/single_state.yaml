@@ -1,0 +1,23 @@
+# Single supercooled, slightly supersaturated mid-tropospheric parcel.
+# Mirrors examples/single_state.py (CLI Case 1).
+met_input:
+  T: 260.0
+  P: 70000.0
+  RH: 110.0
+  rh_reference: water
+  phase_mode: both
+  mode: homogeneous
+  r_ref: 1.0e-7
+dynamics:
+  w: 2.0
+  LWC: 5.0e-4
+  IWC: 1.0e-4
+  cooling_rate: -2.0e-4
+  N_ccn: 3.0e8
+  N_inp: 1.0e4
+  dt_micro: 60.0
+  cell_volume: 1.0e6     # so expected_events is determined
+output:
+  outdir: outputs/single_state
+  format: [json, csv, netcdf]
+  figures: [favorability_bars]

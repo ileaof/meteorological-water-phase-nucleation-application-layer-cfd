@@ -1,0 +1,73 @@
+# Reference 3D scenario for meteorological_flow:
+# warm/humid air inflows from the west (+x) and cold/dry air from the east (-x);
+# a uniform pressure-drop body force drives a gentle through-flow; gravity acts
+# along -z; the top is a mass-balanced outflow that carries out exactly what
+# the two opposing inflows bring in (net boundary flux = 0 -> divergence-free
+# projection -> monotone scalar advection); the validated second-order
+# nucleation kernel is evaluated one-way (diagnostic) over the mixing zone.
+# 20^3 is the dev default (dx=5 m); for a CPU run use --grid-resolution 40 (2.5 m)
+# or 50 (2 m).  Do NOT use 100^3 as a default.
+#
+# Batch 1: stage=one_way (nucleation is diagnostic; the prognostic state is NOT
+# modified by microphysics).  Two-way coupling is a gated Batch-2 extension.
+
+domain: {Lx: 100.0, Ly: 100.0, Lz: 100.0}     # m, cubic mixing chamber
+grid:   {nx: 20, ny: 20, nz: 20}              # 20^3 dev default (dx=5 m)
+time:   {duration: 120.0, cfl: 0.5, dt_max: 0.25}   # s; adaptive CFL each step
+
+flow:
+  formulation: boussinesq                    # documented: expansion cooling 2nd-order
+  nu: 2.0                                    # m^2/s, eddy/SGS momentum viscosity
+  kappa: 2.0                                 # m^2/s, eddy scalar diffusivity
+  advection_order: 1                         # 1=upwind (monotone), 2=MUSCL+minmod
+  p_drop: 30.0                               # Pa, x-direction uniform body force (20-100)
+  gravity: 9.81                              # m/s^2, along -z
+  gamma_damp: 0.2                            # 1/s, Rayleigh momentum drag (bounds convection)
+  smagorinsky: false                         # SGS off (Batch-2 LES option)
+
+physics:
+  P0: 70000.0                                # Pa, thermodynamic background
+  theta_transport: true                      # transport potential temperature (adiabatic lifting)
+  moisture_buoyancy: true                    # virtual + condensate loading
+  T_ref: null                                # null -> initial mean T as Boussinesq reference
+
+boundaries:
+  x_west: inflow                             # warm inflow (Dirichlet velocity + scalars)
+  x_east: inflow                             # cold inflow from the east (-x), sustained mixing
+  y: free_slip                               # free_slip | periodic | wall
+  z_bottom: free_slip                        # free_slip | no_slip
+  z_top: open                                # open = mass-balanced outflow (carries the inflow out)
+  warm_inflow: {side: west,  T: 293.0, RH_water: 90.0, u: 2.0}   # K, %, m/s
+  cold_inflow: {side: east,  T: 258.0, RH_water: 30.0, u: 2.0}
+
+nucleation:
+  mode: homogeneous                          # homogeneous | heterogeneous
+  phase_mode: both                           # auto | liquid | ice | both
+  method: lookup                             # direct | lookup (lookup required at scale)
+  stage: one_way                             # one_way (Batch 1) | vapor_depletion | thermal_feedback | hydrometeor (Batch 2)
+  stochastic: false                          # deterministic mean-field subgrid events
+  seed: 20260820
+  theta: 3.141592653589793                   # rad, homogeneous limit
+  r_ref: 1.0e-7                              # m, continuation radius
+  gmin: 1.0e-3                               # K/m, |gradT| floor (kernel near-equilibrium bound)
+  dt_diagnostic: 60.0                        # s, nucleation recompute cadence
+  lookup:
+    enabled: true
+    n_T: 28                                  # T axis points (230-305 K)
+    n_pv: 20                                 # p_v axis points (40-3500 Pa)
+    n_grad: 9                                # |gradT| axis points (log-spaced 1e-3..20)
+    T_range: [230.0, 305.0]
+    pv_range: [40.0, 3500.0]
+    grad_range: [1.0e-3, 20.0]
+    scan_resolution: 30                      # kernel radius scan resolution
+    cache_path: null                        # null -> <outdir>/nucleation_lookup.npz
+    rebuild: false
+
+output:
+  outdir: outputs/flow_reference
+  interval_steps: 20                         # output + nucleation cadence [steps]
+  format: [netcdf, json, csv]
+  figures: [slices, vectors, budgets]
+  restart: true
+
+random_seed: 20260820                        # reproducibility (written into every output)

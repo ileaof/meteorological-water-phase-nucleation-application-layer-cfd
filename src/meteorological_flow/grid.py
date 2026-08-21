@@ -1,0 +1,152 @@
+"""Staggered Arakawa C-grid for the meteorological_flow solver.
+
+Cell-centred scalars: theta, q_v, q_l, q_i, p' (perturbation pressure), T, rho.
+Staggered velocities: u on x-faces (nx+1,ny,nz), v on y-faces (nx,ny+1,nz),
+w on z-faces (nx,ny,nz+1).  z is the vertical (gravity along -z).
+
+Operators are plain numpy finite-difference stencils.  Boundary one-sided
+derivatives are used only where needed; the pressure solver owns the BC-aware
+Laplacian.  All array shapes are (nx, ny, nz) for cell centres unless noted.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+
+
+@dataclass
+class Grid:
+    nx: int
+    ny: int
+    nz: int
+    Lx: float
+    Ly: float
+    Lz: float
+
+    def __post_init__(self):
+        self.dx = self.Lx / self.nx
+        self.dy = self.Ly / self.ny
+        self.dz = self.Lz / self.nz
+        self.xc = (np.arange(self.nx) + 0.5) * self.dx
+        self.yc = (np.arange(self.ny) + 0.5) * self.dy
+        self.zc = (np.arange(self.nz) + 0.5) * self.dz
+        self.xf = np.linspace(0.0, self.Lx, self.nx + 1)
+        self.yf = np.linspace(0.0, self.Ly, self.ny + 1)
+        self.zf = np.linspace(0.0, self.Lz, self.nz + 1)
+        self.cell_vol = self.dx * self.dy * self.dz
+
+    # ---- shapes ----
+    @property
+    def center_shape(self):
+        return (self.nx, self.ny, self.nz)
+
+    @property
+    def u_shape(self):
+        return (self.nx + 1, self.ny, self.nz)
+
+    @property
+    def v_shape(self):
+        return (self.nx, self.ny + 1, self.nz)
+
+    @property
+    def w_shape(self):
+        return (self.nx, self.ny, self.nz + 1)
+
+    def zeros_c(self):
+        return np.zeros(self.center_shape)
+
+    # ---- divergence of a face velocity field -> cell centres ----
+    def divergence(self, u, v, w):
+        """div(u) = du/dx + dv/dy + dw/dz at cell centres, shape (nx,ny,nz)."""
+        dudx = (u[1:, :, :] - u[:-1, :, :]) / self.dx
+        dvdy = (v[:, 1:, :] - v[:, :-1, :]) / self.dy
+        dwdz = (w[:, :, 1:] - w[:, :, :-1]) / self.dz
+        return dudx + dvdy + dwdz
+
+    # ---- gradient of a cell-centred scalar -> face gradients ----
+    def grad_x_faces(self, p):
+        """dp/dx on x-faces (nx+1,ny,nz).  Interior: central; boundary: 0
+        (Neumann for the projection pressure by default)."""
+        g = np.zeros(self.u_shape)
+        g[1:-1, :, :] = (p[1:, :, :] - p[:-1, :, :]) / self.dx
+        return g
+
+    def grad_y_faces(self, p):
+        g = np.zeros(self.v_shape)
+        g[:, 1:-1, :] = (p[:, 1:, :] - p[:, :-1, :]) / self.dy
+        return g
+
+    def grad_z_faces(self, p):
+        g = np.zeros(self.w_shape)
+        g[:, :, 1:-1] = (p[:, :, 1:] - p[:, :, :-1]) / self.dz
+        return g
+
+    # ---- interpolate cell-centre scalar to face centres (simple average) ----
+    def interp_c_to_ufaces(self, f):
+        out = np.empty(self.u_shape)
+        out[1:-1, :, :] = 0.5 * (f[:-1, :, :] + f[1:, :, :])
+        out[0, :, :] = f[0, :, :]
+        out[-1, :, :] = f[-1, :, :]
+        return out
+
+    def interp_c_to_vfaces(self, f):
+        out = np.empty(self.v_shape)
+        out[:, 1:-1, :] = 0.5 * (f[:, :-1, :] + f[:, 1:, :])
+        out[:, 0, :] = f[:, 0, :]
+        out[:, -1, :] = f[:, -1, :]
+        return out
+
+    def interp_c_to_wfaces(self, f):
+        out = np.empty(self.w_shape)
+        out[:, :, 1:-1] = 0.5 * (f[:, :, :-1] + f[:, :, 1:])
+        out[:, :, 0] = f[:, :, 0]
+        out[:, :, -1] = f[:, :, -1]
+        return out
+
+    # ---- temperature gradient magnitude at cell centres (|grad T|, K/m) ----
+    def grad_magnitude(self, f):
+        """|grad f| at cell centres using central differences with one-sided
+        boundary stencils.  Returns array shape (nx,ny,nz)."""
+        gx = self._central_x(f)
+        gy = self._central_y(f)
+        gz = self._central_z(f)
+        return np.sqrt(gx * gx + gy * gy + gz * gz)
+
+    def _central_x(self, f):
+        g = np.zeros_like(f)
+        g[1:-1, :, :] = (f[2:, :, :] - f[:-2, :, :]) / (2 * self.dx)
+        g[0, :, :] = (f[1, :, :] - f[0, :, :]) / self.dx
+        g[-1, :, :] = (f[-1, :, :] - f[-2, :, :]) / self.dx
+        return g
+
+    def _central_y(self, f):
+        g = np.zeros_like(f)
+        g[:, 1:-1, :] = (f[:, 2:, :] - f[:, :-2, :]) / (2 * self.dy)
+        g[:, 0, :] = (f[:, 1, :] - f[:, 0, :]) / self.dy
+        g[:, -1, :] = (f[:, -1, :] - f[:, -2, :]) / self.dy
+        return g
+
+    def _central_z(self, f):
+        g = np.zeros_like(f)
+        g[:, :, 1:-1] = (f[:, :, 2:] - f[:, :, :-2]) / (2 * self.dz)
+        g[:, :, 0] = (f[:, :, 1] - f[:, :, 0]) / self.dz
+        g[:, :, -1] = (f[:, :, -1] - f[:, :, -2]) / self.dz
+        return g
+
+    def laplacian(self, f):
+        """5/7-point Laplacian of a cell-centred scalar (used by diffusion)."""
+        g = np.zeros_like(f)
+        g[1:-1, :, :] += (f[2:, :, :] - 2 * f[1:-1, :, :] + f[:-2, :, :]) / self.dx ** 2
+        g[0, :, :] += (f[1, :, :] - f[0, :, :]) / self.dx ** 2
+        g[-1, :, :] += (f[-1, :, :] - f[-2, :, :]) / self.dx ** 2
+        g[:, 1:-1, :] += (f[:, 2:, :] - 2 * f[:, 1:-1, :] + f[:, :-2, :]) / self.dy ** 2
+        g[:, 0, :] += (f[:, 1, :] - f[:, 0, :]) / self.dy ** 2
+        g[:, -1, :] += (f[:, -1, :] - f[:, -2, :]) / self.dy ** 2
+        g[:, :, 1:-1] += (f[:, :, 2:] - 2 * f[:, :, 1:-1] + f[:, :, :-2]) / self.dz ** 2
+        g[:, :, 0] += (f[:, :, 1] - f[:, :, 0]) / self.dz ** 2
+        g[:, :, -1] += (f[:, :, -1] - f[:, :, -2]) / self.dz ** 2
+        return g
+
+
+__all__ = ["Grid"]

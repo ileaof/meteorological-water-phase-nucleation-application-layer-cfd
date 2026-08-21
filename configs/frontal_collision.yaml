@@ -1,0 +1,29 @@
+# Warm-moist x cold-dry isobaric mixing -> the supersaturated frontal parcel.
+# Mirrors examples/frontal_collision.py (CLI Case 10).
+air_masses:
+  P: 90000.0           # Pa, frontal pressure
+  warm: {T: 293.15, RH: 95.0}   # 20 C, 95% wrt water
+  cold: {T: 268.15, RH: 40.0}   # -5 C, 40% wrt water
+mixing:
+  method: isobaric_rogers_yau     # linear in T and p_v
+  f_warm_grid: [0.0, 1.0]         # warm-air mass fraction scan
+  n_mix: 501
+  pick: peak_supersaturation      # select the most supersaturated mixture
+ascent:
+  w: 1.5                          # m/s over the cold wedge
+  lapse: 6.5e-3                   # K/m
+  cooling_rate: -9.75e-3          # = -w*lapse, K/s
+met_input:
+  phase_mode: both
+  mode: homogeneous
+  r_ref: 1.0e-7
+dynamics:
+  LWC: 5.0e-4      # supercooled liquid if T_mix <= 273.15 else 8.0e-4
+  IWC: 1.0e-4      # supercooled ice   if T_mix <= 273.15 else 0.0
+  N_ccn: 3.0e8
+  N_inp: 1.0e4
+  dt_micro: 60.0
+  cell_volume: 1.0e6
+output:
+  outdir: outputs/frontal_collision
+  format: [json, csv]

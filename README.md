@@ -945,7 +945,7 @@ python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml -
 python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 20 --duration 60 --two-way-coupling --output outputs/flow_coupled --threads 8
 
 # km-scale DEEP-CONVECTION STORM that actually rains (~1.9 mm domain-mean at 1200 s):
-python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 24 --duration 1200 --storm-scale --output outputs/flow_storm --threads 8
+python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml --duration 1200 --storm-scale --output outputs/flow_storm --threads 8
 
 # after `pip install -e .` the console script is available:
 meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 40 --duration 120 --two-way-coupling
@@ -1230,7 +1230,7 @@ microphysics. The bubble rises, condenses, and the latent heat drives a deep
 updraft that rains.
 
 ```bash
-python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 24 --duration 1200 --storm-scale --output outputs/flow_storm --threads 8
+python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml --duration 1200 --storm-scale --output outputs/flow_storm --threads 8
 python examples/storm_flow_coupled.py --storm-scale
 ```
 

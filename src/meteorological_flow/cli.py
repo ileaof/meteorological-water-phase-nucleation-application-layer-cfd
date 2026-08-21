@@ -23,8 +23,9 @@ def build_argparser() -> argparse.ArgumentParser:
         description="3D Boussinesq flow + one-way water-phase nucleation (CPU).")
     p.add_argument("--config", default=None, help="YAML scenario file")
     p.add_argument("--output", default=None, help="output directory")
-    p.add_argument("--grid-resolution", type=int, default=None,
-                   choices=(20, 40, 50), help="isotropic cell count (20/40/50)")
+    p.add_argument("--grid-resolution", type=int, default=None, metavar="N",
+                   help="isotropic cell count nx=ny=nz (e.g. 20, 24, 40); for "
+                        "--storm-scale, omit to use the tuned 24x24x40 grid")
     p.add_argument("--duration", type=float, default=None, help="simulation duration [s]")
     p.add_argument("--output-interval", type=int, default=None,
                    help="output + nucleation cadence [steps]")

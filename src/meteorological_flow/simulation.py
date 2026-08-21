@@ -384,6 +384,28 @@ class Simulation:
         bud = diag.conservation_budgets(self.state, initial, self.rho0)
         stats = diag.summary_stats(self.state, self.last_nf)
         wall = _time.perf_counter() - self._t0
+        limitations = [
+            ("Boussinesq: density variations enter only through buoyancy; over a deep "
+             "storm column (10-12 km) this is stretched beyond strict validity."),
+            ("|gradT| floored at gmin: the |gradT|->0 limit is the kernel's "
+             "near-equilibrium result (parameterization), NOT the CNT limit."),
+            ("Momentum advection uses a centre round-trip (v1 simplification); the "
+             "projection corrects divergence but this is not a fully conservative "
+             "staggered momentum scheme."),
+            "Not operational weather prediction; demonstration-scale only.",
+        ]
+        if self.do_microphysics:
+            limitations.insert(1, ("Two-way microphysics active: hydrometeor growth + "
+                "latent-heat feedback + sedimentation; per-step latent heating, velocity "
+                "and temperature are bounded as documented stability safeguards."))
+            if cfg.physics.scenario == "deep_convection":
+                limitations.insert(2, ("Storm scale: stratified base state + warm-bubble "
+                    "trigger; Boussinesq-stretched demonstration on a coarse grid -- "
+                    "updraft speeds, condensate loading and surface totals are indicative, "
+                    "not quantitative."))
+        else:
+            limitations.insert(1, ("One-way: nucleation is diagnostic; the prognostic "
+                "state is NOT modified by microphysics (Batch 1)."))
         report = {
             "code_version": attrs.get("code_version", "meteorological_flow v1"),
             "config": _cfg_summary(cfg),
@@ -399,20 +421,7 @@ class Simulation:
             "final_solver_iters": getattr(self, "_last_iters", 0),
             "lookup_used": self.lookup is not None,
             "stage": self.stage,
-            "limitations": [
-                ("Boussinesq: pressure-drop expansion cooling ~0.1 K is 2nd-order; "
-                 "supersaturation dominated by mixing + buoyant lifting."),
-                ("One-way (Batch 1): nucleation is diagnostic; prognostic state is not "
-                 "modified by microphysics. Two-way coupling is a gated Batch-2 step."),
-                ("|gradT| floored at gmin: the |gradT|->0 limit is the kernel's "
-                 "near-equilibrium result (parameterization), NOT the CNT limit."),
-                ("Momentum advection uses a centre round-trip (v1 simplification); the "
-                 "projection corrects divergence but this is not a fully conservative "
-                 "staggered momentum scheme."),
-                ("Rain/snow/graupel/hail are reported as thermodynamic favorability, "
-                 "NOT precipitation prediction."),
-                "Not operational weather prediction; demonstration-scale only.",
-            ],
+            "limitations": limitations,
         }
         report["stage_microphysics"] = bool(self.do_microphysics)
         if getattr(self.state, "surface_precip", None) is not None:

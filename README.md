@@ -940,9 +940,12 @@ python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml -
 # pure flow (no microphysics), fast sanity check:
 python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 20 --duration 60 --no-microphysics --output outputs/flow_pure
 
-# TWO-WAY storm / precipitation run (Increment 2): the flow drives the microphysics
+# TWO-WAY microphysics coupling (Increment 2): the flow drives the microphysics
 # (hydrometeor growth + latent-heat feedback + sedimentation). --threads is unused here:
 python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 20 --duration 60 --two-way-coupling --output outputs/flow_coupled --threads 8
+
+# km-scale DEEP-CONVECTION STORM that actually rains (~1.9 mm domain-mean at 1200 s):
+python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 24 --duration 1200 --storm-scale --output outputs/flow_storm --threads 8
 
 # after `pip install -e .` the console script is available:
 meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 40 --duration 120 --two-way-coupling
@@ -960,6 +963,7 @@ meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resoluti
 | `--threads N` | multiprocessing threads for the lookup build |
 | `--one-way-coupling` | stage = one_way (diagnostic nucleation) |
 | `--two-way-coupling` / `--hydrometeors` | stage = hydrometeor (two-way microphysics: growth + latent heat + sedimentation) |
+| `--storm-scale` / `--deep-convection` | km-scale deep-convection storm: stratified sounding + warm-bubble trigger + two-way microphysics (demonstration; Boussinesq-stretched) |
 | `--no-microphysics` | stage = none (pure flow) |
 | `--diagnostic-only` | alias for one-way |
 | `--method direct\|lookup` | kernel evaluation method (lookup required at scale) |
@@ -1211,10 +1215,48 @@ microphysics**:
 
 This is **demonstration-scale** (a ~1 km chamber, seconds of simulated time), so
 the surface accumulation is small — the coupling is genuinely two-way, but a
-~100 mm event needs a km-scale, long-lived storm circulation (the 0-D example
-above). The nucleation core stays read-only; the microphysics conserves water
-(surface precipitation is the only sink). Locked by
-`tests/test_flow_microphysics_coupling.py`.
+storm needs a km-scale circulation (next section). The nucleation core stays
+read-only; the microphysics conserves water (surface precipitation is the only
+sink). Locked by `tests/test_flow_microphysics_coupling.py`.
+
+### 28.5 km-scale deep-convection storm (`--storm-scale`) — the flow that actually rains
+
+The shallow chamber forms clouds but negligible surface precipitation. The
+`--storm-scale` flag switches the flow to a **km-scale deep-convection**
+configuration: a hydrostatic, conditionally-unstable **base-state sounding**
+(θ₀(z), qᵥ₀(z), p₀(z)) with a low-level **warm-bubble trigger**, **perturbation
+buoyancy** referenced to the base state, closed lateral walls, and the two-way
+microphysics. The bubble rises, condenses, and the latent heat drives a deep
+updraft that rains.
+
+```bash
+python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 24 --duration 1200 --storm-scale --output outputs/flow_storm --threads 8
+python examples/storm_flow_coupled.py --storm-scale
+```
+
+Verified run (18×18×30, 16 km × 10 km, 1200 s):
+
+```
+steps = 516, final t = 1200 s, max CFL = 0.24
+max |w| = 43.3 m/s     T = 180.0 .. 335.0 K     max S_w = 1.74
+deep mixed-phase cloud (max mixing ratio, kg/kg):
+  cloud ice 9.9e-03   rain 1.1e-03   snow 9.9e-04   graupel 1.2e-03
+surface precipitation (domain-mean, mm):
+  rain 0.542   snow 0.261   graupel 1.097   hail 0.000   total 1.90 mm
+  (local column maxima: rain 1.35, snow 0.72, graupel 1.98 mm)
+```
+
+The storm-scale run produces **~1.9 mm domain-mean total precipitation**
+(rain + snow + graupel) — about **four orders of magnitude** more than the shallow
+chamber's ~1.3×10⁻⁴ mm — and it grows with run length.
+
+> **Demonstration-scale caveat.** Over a 10–12 km column the density varies by
+> ~2–3×, beyond the strict Boussinesq range, and the grid is coarse (~0.5–1 km).
+> The storm scenario is an **idealised demonstration** (Boussinesq-stretched), not
+> a validated deep-convection result: updraft speeds, condensate loading and
+> surface totals are indicative, not quantitative. Per-step latent heating,
+> velocity and temperature are bounded as documented stability safeguards; an
+> anelastic/compressible core is future work.
 
 ---
 

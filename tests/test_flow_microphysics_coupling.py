@@ -96,3 +96,41 @@ def test_coupled_sim_forms_condensate_and_reports_precip():
     # surface precipitation is reported
     assert "surface_precip_mm" in report
     assert report["stage_microphysics"] is True
+
+
+def test_storm_scale_override_and_cli():
+    cfg = apply_overrides(SimulationConfig(), storm_scale=True)
+    assert cfg.physics.scenario == "deep_convection"
+    assert cfg.nucleation.stage == "hydrometeor"
+    assert cfg.boundaries.x_west == "wall" and cfg.boundaries.x_east == "wall"
+    assert cfg.domain.Lz >= 8000.0
+    args = build_argparser().parse_args(["--storm-scale"])
+    assert args.storm_scale is True
+    args2 = build_argparser().parse_args(["--deep-convection"])
+    assert args2.storm_scale is True
+
+
+def test_storm_scale_deep_convection_runs_stably():
+    cfg = apply_overrides(SimulationConfig(), storm_scale=True)
+    cfg.grid.nx = cfg.grid.ny = 10
+    cfg.grid.nz = 18
+    cfg.time.duration = 90.0
+    cfg.output.outdir = "outputs/_test_storm"
+    cfg.output.format = ["json"]
+    cfg.output.figures = []
+    cfg.output.restart = False
+    cfg.output.interval_steps = 100
+    sim = Simulation(cfg)
+    assert sim.base is not None and cfg.physics.scenario == "deep_convection"
+    # realistic sounding: warm near surface, cold near the top
+    assert sim.base.T0[0] > 290.0 and sim.base.T0[-1] < 265.0
+    report = sim.run()
+    st = sim.state
+    # numerically stable and physically bounded
+    assert report["max_cfl"] < 1.0
+    assert float(np.min(st.T)) >= 179.0 and float(np.max(st.T)) <= 336.0
+    for name in ("qv", "ql", "qi", "qr", "qs", "qg", "qh"):
+        a = np.asarray(getattr(st, name))
+        assert np.all(np.isfinite(a)) and np.all(a >= 0.0)
+    # a deep cloud forms from the resolved updraft
+    assert max(float(np.max(st.ql)), float(np.max(st.qi))) > 0.0

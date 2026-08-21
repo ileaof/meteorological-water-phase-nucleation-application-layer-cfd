@@ -36,6 +36,8 @@ class FlowState:
     qh: np.ndarray = None    # hail
     # accumulated surface precipitation [kg/m^2 == mm], per category (2-D over x,y)
     surface_precip: dict = None
+    # hydrostatic base pressure [Pa] (deep_convection scenario; None -> uniform P0)
+    p0_field: np.ndarray = None
     t: float = 0.0           # simulation time [s]
     # diagnosed (filled by .diagnose())
     T: np.ndarray = None
@@ -77,12 +79,15 @@ class FlowState:
         T = T(theta, P_total); p_v from q_v; S/RH from saturation (engine).
         """
         g = self.grid
-        P0 = cfg.physics.P0
-        P_total = np.full(g.center_shape, P0, dtype=float) + self.p
+        if self.p0_field is not None:
+            P_base = self.p0_field                 # stratified base (deep convection)
+        else:
+            P_base = np.full(g.center_shape, cfg.physics.P0, dtype=float)
+        P_total = P_base + self.p
         # defensive positivity guard: the Boussinesq perturbation p' is O(Pa) and
         # should never drive P_total <= 0; if a transient overshoot does, floor it
         # so the theta->T power stays real (and flag it via the clip).
-        P_total = np.where(P_total > 0.0, P_total, P0)
+        P_total = np.where(P_total > 0.0, P_total, P_base)
         self.P_total = P_total
         if cfg.physics.theta_transport:
             # theta is defined with P0_REF (100000 Pa) as the reference pressure,
@@ -106,6 +111,7 @@ class FlowState:
             qr=_c(self.qr), qs=_c(self.qs), qg=_c(self.qg), qh=_c(self.qh),
             surface_precip=None if self.surface_precip is None
             else {k: v.copy() for k, v in self.surface_precip.items()},
+            p0_field=_c(self.p0_field),
             t=self.t,
             T=None if self.T is None else self.T.copy(),
             P_total=None if self.P_total is None else self.P_total.copy(),

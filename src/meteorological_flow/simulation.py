@@ -59,14 +59,43 @@ def _grid_from_config(cfg: SimulationConfig) -> Grid:
                 Lx=cfg.domain.Lx, Ly=cfg.domain.Ly, Lz=cfg.domain.Lz)
 
 
-def _initial_state(grid: Grid, cfg: SimulationConfig) -> FlowState:
+def _deep_convection_initial(grid: Grid, cfg: SimulationConfig, base=None) -> FlowState:
+    """Stratified conditionally-unstable base state + a warm-bubble trigger.
+
+    The hydrostatic base state (:mod:`base_state`) sets ``theta0(z)``, ``qv0(z)``
+    and the base pressure ``p0(z)``; a Gaussian warm bubble at low levels seeds
+    the updraft.  The velocities start at rest; buoyancy (perturbation form) and
+    the two-way microphysics latent heat drive the deep, precipitating plume.
+    """
+    from .base_state import build_base_state, warm_bubble
+    if base is None:
+        base = build_base_state(grid)
+    state = FlowState.zeros(grid)
+    theta0 = base.field(base.theta0, grid.center_shape)
+    qv0 = base.field(base.qv0, grid.center_shape)
+    dth, dqv = warm_bubble(grid, dtheta=cfg.physics.bubble_dtheta)
+    state.theta = theta0 + dth
+    state.qv = np.maximum(qv0 + dqv, 0.0)
+    state.p0_field = base.field(base.p0, grid.center_shape)
+    bc.apply_velocity_bcs(state, grid, cfg)
+    bc.apply_scalar_bcs(state, grid, cfg)
+    state.diagnose(cfg)
+    return state
+
+
+def _initial_state(grid: Grid, cfg: SimulationConfig, base=None) -> FlowState:
     """Smooth west(warm)->east(cold) blend for theta and q_v; zero hydrometeors.
 
     A deterministic (seed-independent) linear blend provides a physically
     reasonable initial condition; the inflow BCs and the pressure drop drive the
     subsequent mixing.  A small sinusoidal y-perturbation breaks the exact
     y-symmetry so the mixing zone is resolved (not a numerical artefact).
+
+    For the ``deep_convection`` scenario the stratified base state is used
+    instead (see :func:`_deep_convection_initial`).
     """
+    if cfg.physics.scenario == "deep_convection":
+        return _deep_convection_initial(grid, cfg, base)
     state = FlowState.zeros(grid)
     th_w, qv_w = bc.inflow_state(cfg.boundaries.warm_inflow, cfg.physics.P0)
     th_c, qv_c = bc.inflow_state(cfg.boundaries.cold_inflow, cfg.physics.P0)
@@ -105,10 +134,21 @@ class Simulation:
         self.cfg = cfg
         self.grid = _grid_from_config(cfg)
         self.rng = np.random.default_rng(cfg.random_seed)
+        # deep-convection base state (stratified sounding) for perturbation buoyancy
+        self.base = None
+        self.theta0_field = None
+        self.qv0_field = None
+        if cfg.physics.scenario == "deep_convection":
+            from .base_state import build_base_state
+            self.base = build_base_state(self.grid)
+            self.theta0_field = self.base.field(self.base.theta0, self.grid.center_shape)
+            self.qv0_field = self.base.field(self.base.qv0, self.grid.center_shape)
         if restart:
             self.state = fio.load_restart(restart, self.grid)
+            if self.base is not None and self.state.p0_field is None:
+                self.state.p0_field = self.base.field(self.base.p0, self.grid.center_shape)
         else:
-            self.state = _initial_state(self.grid, cfg)
+            self.state = _initial_state(self.grid, cfg, base=self.base)
         self.state.diagnose(cfg)
         # reference Boussinesq state
         self.T_ref = float(self.state.T.mean()) if cfg.physics.T_ref is None else cfg.physics.T_ref
@@ -173,8 +213,9 @@ class Simulation:
         # mixing -> supersaturation -> nucleation.  Fully conservative staggered
         # momentum advection is a Batch-2 upgrade.
         dif.diffuse_momentum(st, g, cfg.flow.nu, dt)
-        # buoyancy on w
-        Bf = buo.buoyancy_w_tendency(st, g, cfg, self.T_ref, self.qv_ref)
+        # buoyancy on w (perturbation form vs base state for deep convection)
+        Bf = buo.buoyancy_w_tendency(st, g, cfg, self.T_ref, self.qv_ref,
+                                     theta0=self.theta0_field, qv0=self.qv0_field)
         st.w += dt * Bf
         # uniform pressure-drop body force along +x (NOT a per-cell subtraction):
         #   du/dt = -(1/rho0) dP/dx, with dP/dx = -p_drop/Lx  =>  du/dt = p_drop/(rho0*Lx)
@@ -187,6 +228,13 @@ class Simulation:
         if cfg.flow.gamma_damp > 0.0:
             decay = 1.0 - cfg.flow.gamma_damp * dt
             st.u *= decay; st.v *= decay; st.w *= decay
+        # safety limiter: bound velocities so the explicit upwind scheme stays
+        # stable under strong buoyant acceleration (documented; only bites at
+        # extreme speeds, never in the shallow mixing-chamber reference).
+        _VCAP = 120.0
+        np.clip(st.u, -_VCAP, _VCAP, out=st.u)
+        np.clip(st.v, -_VCAP, _VCAP, out=st.v)
+        np.clip(st.w, -_VCAP, _VCAP, out=st.w)
         # 3. project the velocity to divergence-free BEFORE advecting scalars.
         # Flux-form upwind is monotone (bounded) only under a SOLENOIDAL velocity
         # (per-axis CFL<1); advecting with the divergent predictor lets multi-axis
@@ -228,6 +276,14 @@ class Simulation:
             self.coupler.zero_inflow_hydrometeors(st)
             bc.apply_scalar_bcs(st, g, cfg)
             st.diagnose(cfg)
+            # deep-column safety: keep T inside the physical/correlation range so
+            # a transient numerical overshoot cannot corrupt the saturation
+            # curves (documented stability guard; only bites at extreme cells).
+            if cfg.physics.scenario == "deep_convection":
+                Tc = np.clip(st.T, 180.0, 335.0)
+                if not np.array_equal(Tc, st.T):
+                    st.theta = th.theta_from_T(Tc, st.P_total, th.P0_REF)
+                    st.diagnose(cfg)
         st.t = self.t + dt
 
     # ---- nucleation diagnostics (one-way) ----

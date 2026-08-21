@@ -25,7 +25,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from meteorological_flow.config import SimulationConfig       # noqa: E402
+from meteorological_flow.config import SimulationConfig, apply_overrides   # noqa: E402
 from meteorological_flow.simulation import Simulation         # noqa: E402
 
 
@@ -35,15 +35,25 @@ def main(argv=None) -> int:
     ap.add_argument("--duration", type=float, default=45.0,
                     help="simulated seconds (per-step microphysics; a minute of "
                          "sim time takes a few minutes of wall clock)")
+    ap.add_argument("--storm-scale", action="store_true",
+                    help="km-scale deep-convection storm (stratified sounding + "
+                         "warm-bubble trigger) instead of the shallow chamber")
     ap.add_argument("--json", default="outputs/flow_coupled/summary.json")
     args = ap.parse_args(argv)
 
-    cfg = SimulationConfig()
-    cfg.grid.nx = cfg.grid.ny = args.grid
-    cfg.grid.nz = int(args.grid * 1.5)
-    cfg.domain.Lz = 1500.0                       # taller chamber for sedimentation
-    cfg.time.duration = args.duration
-    cfg.nucleation.stage = "hydrometeor"          # <-- two-way coupling
+    if args.storm_scale:
+        cfg = apply_overrides(SimulationConfig(), storm_scale=True)
+        if args.duration == 45.0:                 # bump the default for a storm
+            cfg.time.duration = 1200.0
+        else:
+            cfg.time.duration = args.duration
+    else:
+        cfg = SimulationConfig()
+        cfg.grid.nx = cfg.grid.ny = args.grid
+        cfg.grid.nz = int(args.grid * 1.5)
+        cfg.domain.Lz = 1500.0                    # taller chamber for sedimentation
+        cfg.time.duration = args.duration
+        cfg.nucleation.stage = "hydrometeor"      # <-- two-way coupling
     cfg.output.outdir = os.path.dirname(args.json) or "outputs/flow_coupled"
     cfg.output.format = ["json", "csv"]
     cfg.output.figures = []

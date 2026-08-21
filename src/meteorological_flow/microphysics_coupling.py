@@ -38,9 +38,10 @@ _CATS = (("rain", "qr"), ("snow", "qs"), ("graupel", "qg"), ("hail", "qh"))
 
 
 class MicrophysicsCoupler:
-    def __init__(self, micro_cfg: MicrophysicsConfig | None = None):
+    def __init__(self, micro_cfg: MicrophysicsConfig | None = None, max_dT: float = 8.0):
         self.cfg = micro_cfg or MicrophysicsConfig()
         self.scheme = BulkMicrophysics(self.cfg)
+        self.max_dT = float(max_dT)   # max per-step latent heating [K] (stability)
 
     # ---- growth/conversion + embryo source + latent-heat feedback ----
     def apply(self, flow, grid, dt, nf=None) -> dict:
@@ -66,8 +67,12 @@ class MicrophysicsCoupler:
         flow.qs = np.asarray(micro.qs, dtype=float)
         flow.qg = np.asarray(micro.qg, dtype=float)
         flow.qh = np.asarray(micro.qh, dtype=float)
-        # latent-heat feedback: bake the updated actual T back into theta
-        flow.theta = th.theta_from_T(np.asarray(micro.T, dtype=float),
+        # latent-heat feedback: bake the updated actual T back into theta.
+        # The per-step heating is bounded (stability safeguard for the explicit
+        # scheme in an under-resolved updraft core; only bites at extreme cells).
+        T_new = np.asarray(micro.T, dtype=float)
+        dT = np.clip(T_new - np.asarray(flow.T, dtype=float), -self.max_dT, self.max_dT)
+        flow.theta = th.theta_from_T(np.asarray(flow.T, dtype=float) + dT,
                                      flow.P_total, th.P0_REF)
         return budget
 

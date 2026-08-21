@@ -40,6 +40,11 @@ def build_argparser() -> argparse.ArgumentParser:
                    action="store_true",
                    help="two-way microphysics: hydrometeor growth + latent-heat "
                         "feedback + sedimentation (Increment 2)")
+    p.add_argument("--storm-scale", "--deep-convection", dest="storm_scale",
+                   action="store_true",
+                   help="km-scale deep-convection storm: stratified sounding + "
+                        "warm-bubble trigger + two-way microphysics (demonstration; "
+                        "Boussinesq-stretched over a deep column)")
     p.add_argument("--method", choices=("lookup", "direct"), default=None,
                    help="nucleation evaluation method")
     p.add_argument("--restart", default=None, help="restart from .npz checkpoint")
@@ -69,7 +74,7 @@ def main(argv=None) -> int:
         output_interval=args.output_interval, output=args.output,
         no_microphysics=args.no_microphysics, one_way=args.one_way_coupling,
         diagnostic_only=args.diagnostic_only, two_way=args.two_way_coupling,
-        method=args.method, threads=args.threads)
+        storm_scale=args.storm_scale, method=args.method, threads=args.threads)
 
     if args.dry_run:
         return _dry_run(cfg)

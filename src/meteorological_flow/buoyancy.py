@@ -16,15 +16,40 @@ from .grid import Grid
 from .state import FlowState
 
 
+def _condensate_loading(state: FlowState) -> np.ndarray:
+    loading = state.ql + state.qi
+    for name in ("qr", "qs", "qg", "qh"):
+        a = getattr(state, name, None)
+        if a is not None:
+            loading = loading + a
+    return loading
+
+
 def buoyancy_w_tendency(state: FlowState, grid: Grid, cfg: SimulationConfig,
-                        T_ref: float, qv_ref: float) -> np.ndarray:
-    """Return the w-face tendency [m/s^2] from buoyancy."""
-    T = state.T if state.T is not None else state.theta
-    dT = (T - T_ref) / T_ref
-    if cfg.physics.moisture_buoyancy:
-        B = cfg.flow.gravity * (dT + 0.61 * (state.qv - qv_ref) - (state.ql + state.qi))
+                        T_ref: float, qv_ref: float,
+                        theta0=None, qv0=None) -> np.ndarray:
+    """Return the w-face tendency [m/s^2] from buoyancy.
+
+    With a stratified base state (``theta0``/``qv0`` given, deep-convection
+    scenario) the buoyancy is the **perturbation** form ``b = g[theta'/theta0 +
+    0.61 q_v' - condensate loading]`` referenced to the local base state;
+    otherwise the mixing-chamber form referenced to the scalar ``T_ref``.
+    """
+    g = cfg.flow.gravity
+    if theta0 is not None:
+        thp = state.theta - theta0
+        if cfg.physics.moisture_buoyancy:
+            qvp = state.qv - qv0
+            B = g * (thp / theta0 + 0.61 * qvp - _condensate_loading(state))
+        else:
+            B = g * (thp / theta0)
     else:
-        B = cfg.flow.gravity * dT
+        T = state.T if state.T is not None else state.theta
+        dT = (T - T_ref) / T_ref
+        if cfg.physics.moisture_buoyancy:
+            B = g * (dT + 0.61 * (state.qv - qv_ref) - _condensate_loading(state))
+        else:
+            B = g * dT
     # average cell-centre buoyancy onto z-faces
     Bf = np.zeros(grid.w_shape)
     Bf[:, :, 1:-1] = 0.5 * (B[:, :, :-1] + B[:, :, 1:])

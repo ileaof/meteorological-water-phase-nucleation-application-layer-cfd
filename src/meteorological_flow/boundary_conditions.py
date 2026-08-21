@@ -37,11 +37,15 @@ def apply_velocity_bcs(state: FlowState, grid: Grid, cfg: SimulationConfig) -> N
         state.u[0, :, :] = b.warm_inflow.u          # +x into domain
     elif b.x_west == "outflow":
         state.u[0, :, :] = state.u[1, :, :]         # zero normal gradient
+    elif b.x_west == "wall":
+        state.u[0, :, :] = 0.0                       # closed (no normal flow)
     # x faces: east
     if b.x_east == "inflow":
         state.u[-1, :, :] = -b.cold_inflow.u        # -x into domain
     elif b.x_east == "outflow":
         state.u[-1, :, :] = state.u[-2, :, :]        # zero normal gradient
+    elif b.x_east == "wall":
+        state.u[-1, :, :] = 0.0
     # y walls: free-slip (no normal v)
     if b.y == "free_slip" or b.y == "wall":
         state.v[:, 0, :] = 0.0
@@ -84,11 +88,11 @@ def apply_scalar_bcs(state: FlowState, grid: Grid, cfg: SimulationConfig) -> Non
         state.qv[-1, :, :] = qv_c
         state.ql[-1, :, :] = 0.0
         state.qi[-1, :, :] = 0.0
-    # outflow / open boundaries: zero-gradient (copy inner slab)
-    if b.x_west == "outflow":
+    # outflow / wall boundaries: zero-gradient scalars (copy inner slab)
+    if b.x_west in ("outflow", "wall"):
         state.theta[0, :, :] = state.theta[1, :, :]
         state.qv[0, :, :] = state.qv[1, :, :]
-    if b.x_east == "outflow":
+    if b.x_east in ("outflow", "wall"):
         state.theta[-1, :, :] = state.theta[-2, :, :]
         state.qv[-1, :, :] = state.qv[-2, :, :]
     # y walls: zero normal gradient

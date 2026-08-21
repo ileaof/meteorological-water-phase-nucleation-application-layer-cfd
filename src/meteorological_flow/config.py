@@ -58,6 +58,8 @@ class PhysicsConfig:
     theta_transport: bool = True
     moisture_buoyancy: bool = True
     T_ref: float | None = None   # reference T for Boussinesq buoyancy; None=mean
+    scenario: str = "mixing_chamber"   # mixing_chamber | deep_convection (storm-scale)
+    bubble_dtheta: float = 3.0         # warm-bubble amplitude [K] (deep_convection)
 
 
 @dataclass
@@ -160,7 +162,9 @@ def from_dict(d: dict[str, Any]) -> SimulationConfig:
     cfg.physics = PhysicsConfig(P0=float(_get(ph, "P0", 70000.0)),
                                theta_transport=bool(_get(ph, "theta_transport", True)),
                                moisture_buoyancy=bool(_get(ph, "moisture_buoyancy", True)),
-                               T_ref=_get(ph, "T_ref", None))
+                               T_ref=_get(ph, "T_ref", None),
+                               scenario=str(_get(ph, "scenario", "mixing_chamber")),
+                               bubble_dtheta=float(_get(ph, "bubble_dtheta", 3.0)))
     bd = _get(d, "boundaries", {})
     warm = _get(bd, "warm_inflow", {})
     cold = _get(bd, "cold_inflow", {})
@@ -241,10 +245,31 @@ def apply_overrides(cfg: SimulationConfig, *,
                    one_way: bool = False,
                    diagnostic_only: bool = False,
                    two_way: bool = False,
+                   storm_scale: bool = False,
                    method: str | None = None,
                    threads: int | None = None) -> SimulationConfig:
     """Return a copy of cfg with CLI overrides applied."""
     cfg = copy.deepcopy(cfg)
+    if storm_scale:
+        # km-scale deep-convection storm: stratified base state + warm-bubble
+        # trigger + closed walls, two-way microphysics.  Demonstration-scale
+        # (Boussinesq-stretched over a deep column) -- see base_state.py.
+        cfg.physics.scenario = "deep_convection"
+        cfg.physics.P0 = 100000.0
+        cfg.domain.Lx = cfg.domain.Ly = 16000.0
+        cfg.domain.Lz = 10000.0
+        cfg.nucleation.stage = "hydrometeor"
+        cfg.boundaries.x_west = cfg.boundaries.x_east = "wall"
+        cfg.boundaries.y = "free_slip"
+        cfg.boundaries.z_top = "damping_layer"
+        cfg.boundaries.z_bottom = "free_slip"
+        cfg.flow.p_drop = 0.0
+        cfg.flow.gamma_damp = 0.06              # bound explosive buoyant runaway
+        cfg.flow.nu = cfg.flow.kappa = 80.0     # eddy viscosity/diffusivity at ~km res
+        cfg.time.cfl = 0.3
+        cfg.time.dt_max = 3.0                    # deep column: keep the fall/advective CFL < 1
+        cfg.grid.nx = cfg.grid.ny = 24
+        cfg.grid.nz = 40
     if grid_resolution is not None:
         n = int(grid_resolution)
         cfg.grid.nx = cfg.grid.ny = cfg.grid.nz = n

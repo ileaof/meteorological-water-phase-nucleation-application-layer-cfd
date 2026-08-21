@@ -15,6 +15,31 @@ validation report see
 
 ---
 
+## Contents
+
+1. [What this module is](#1-what-this-module-is) — incl. [architecture](#11-architecture) & [the physics in brief](#12-the-physics-in-brief)
+2. [Dependencies](#2-dependencies)
+3. [Installation & quick start](#3-installation--quick-start)
+4. [Constants & re-exported core symbols](#4-constants--re-exported-core-symbols)
+5. [Input — `MetInput`](#5-input--metinput)
+6. [Humidity helpers](#6-humidity-helpers)
+7. [Free-energy decomposition](#7-free-energy-decomposition)
+8. [Precipitation diagnosis](#8-precipitation-diagnosis)
+9. [Output — `MetNucleationReport`](#9-output--metnucleationreport)
+10. [Runner — `MetNucleationRunner`](#10-runner--metnucleationrunner)
+11. [I/O adapters](#11-io-adapters)
+12. [Visualisation — `MetNucleationPlotter`](#12-visualisation--metnucleationplotter)
+13. [Self-checks & validation](#13-self-checks--validation)
+14. [Command-line reference](#14-command-line-reference) — incl. the 10 verified [CLI cases](#141-cli-cases-with-verified-output)
+15. [Examples](#15-examples)
+16. [Conventions](#16-conventions)
+17. [Validity ranges & what remains hypothesis](#17-validity-ranges--what-remains-hypothesis)
+18. [Troubleshooting](#18-troubleshooting)
+19. [Citation & license](#19-citation--license)
+20. [File map](#20-file-map)
+
+---
+
 ## 1. What this module is
 
 `met_h2o_nucleation.py` computes, for one or more atmospheric states:

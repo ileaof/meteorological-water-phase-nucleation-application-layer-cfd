@@ -53,4 +53,5 @@ src/met_water_nucleation/_engine/unified_h2o_nucleation_climate/unified_nucleati
 /out_met_nucleation/
 /outputs/cli_report.json
 /outputs/storm.json
+/outputs/_*          # scratch/test outputs (_io_test_*.nc, _test_*, _storm_*, ...)
 *.log

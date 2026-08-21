@@ -74,9 +74,15 @@ def plot_snapshot(state, nf, grid: Grid, outdir: str, t: float, tag: str = "") -
     X, Y = np.meshgrid(grid.xc, grid.yc, indexing="ij")
     ax.pcolormesh(X, Y, _slice(umag, "h", midz), shading="auto", cmap="cividis")
     step = max(1, grid.nx // 12)
-    ax.quiver(X[::step, ::step], Y[::step, ::step],
-              _slice(uc, "h", midz)[::step, ::step],
-              _slice(vc, "h", midz)[::step, ::step], color="white")
+    uq = np.nan_to_num(_slice(uc, "h", midz)[::step, ::step])
+    vq = np.nan_to_num(_slice(vc, "h", midz)[::step, ::step])
+    # skip the quiver when the flow is essentially at rest: matplotlib's autoscale
+    # divides by the vector magnitude, so all-zero vectors raise a divide-by-zero
+    # warning (harmless, but noisy at the first steps before convection develops).
+    vmax = float(np.max(np.hypot(uq, vq)))
+    if vmax > 1e-9:
+        ax.quiver(X[::step, ::step], Y[::step, ::step], uq, vq,
+                  color="white", scale=max(vmax * 20.0, 1e-9))
     ax.set_title(f"|u| + vectors (z=mid) {tag}")
     ax.set_xlabel("x [m]"); ax.set_ylabel("y [m]")
     fig.tight_layout()

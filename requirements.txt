@@ -1,19 +1,19 @@
-# Runtime dependencies for met_h2o_nucleation.py (application / diagnosis layer).
+# Runtime dependencies for the meteorological water-phase nucleation layer.
 #
-# Only NumPy is strictly required for the core diagnostics. Everything else is
-# imported lazily and only when the corresponding feature is used, so you can
-# install a minimal or a full environment depending on your needs.
+# The validated physics core (unified_h2o_nucleation_climate) is bundled in this
+# repo and is imported whenever the package loads. That core imports numpy,
+# scipy and matplotlib at import time, so all three are REQUIRED just to run the
+# module — even for a plain CLI report. Only the NetCDF/GRIB I/O extras are
+# optional (they are imported lazily, on demand).
 
 # --- Required -------------------------------------------------------------
 numpy>=1.20
+scipy            # core: Brent root-finding (scipy.optimize.brentq)
+matplotlib       # core: imported at load (uses the headless "Agg" backend)
 
-# --- Optional (recommended for the full feature set) ----------------------
-# scipy    : Brent root-finding for the thermal closure, NetCDF3 engine
-# matplotlib : figure generation (Plots / example_met_figures.py)
+# --- Optional (NetCDF / GRIB ingestion & export) --------------------------
 # xarray   : NetCDF ingestion & report export (example_met_xarray_netcdf.py)
 # netCDF4  : NetCDF4 backend for xarray
-scipy
-matplotlib
 xarray
 netCDF4
 

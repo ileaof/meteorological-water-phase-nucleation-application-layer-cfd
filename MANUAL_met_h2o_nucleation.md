@@ -911,6 +911,8 @@ the microphysical timestep + cell volume.
 met_h2o_nucleation/                <-- this module (application/diagnosis layer)
     met_h2o_nucleation.py            the module
     het_contact_angle.py             heterogeneous contact-angle models (sibling module)
+    Nucleation_model_H2O_vapour_solid_Sim_2026_paper.py   ice reference model (SHA-256 guarded)
+    Nucleation_model_H2O_vapour_liquid_Sim_2026.py        liquid reference model
     test_met_nucleation.py           24-test validation suite
     example_met_single_state.py      single-state example
     example_met_vertical_profile.py  vertical-profile example
@@ -922,6 +924,6 @@ met_h2o_nucleation/                <-- this module (application/diagnosis layer)
     MANUAL_met_h2o_nucleation.html   this manual (HTML)
     out_met_nucleation/              generated outputs (JSON/CSV/NetCDF/PNG)
 
-unified_h2o_nucleation_climate/    the validated core (READ-ONLY — do not modify)
+unified_h2o_nucleation_climate/    the validated core (bundled; READ-ONLY — do not modify)
     unified_h2o_nucleation_climate.py
 ```

@@ -134,3 +134,24 @@ def test_storm_scale_deep_convection_runs_stably():
         assert np.all(np.isfinite(a)) and np.all(a >= 0.0)
     # a deep cloud forms from the resolved updraft
     assert max(float(np.max(st.ql)), float(np.max(st.qi))) > 0.0
+
+
+def test_netcdf_axes_correct_for_noncubic_grid():
+    """NetCDF output must label axes correctly on a non-cubic grid (nx != nz),
+    e.g. the storm-scale 24x24x40 -- a cubic grid masked the mislabelling."""
+    import xarray as xr
+
+    from meteorological_flow import io as fio
+    from meteorological_flow.grid import Grid
+    g = Grid(nx=5, ny=6, nz=9, Lx=1000, Ly=1000, Lz=2000)
+    fld = np.arange(5 * 6 * 9, dtype=float).reshape(5, 6, 9)   # (nx, ny, nz)
+    snaps = [{"time": float(t), "T": fld.copy()} for t in (0.0, 1.0)]
+    path = "outputs/_test_io_axes.nc"
+    fio.write_netcdf(snaps, path, g, {"k": "v"})
+    ds = xr.open_dataset(path, engine="scipy")
+    try:
+        assert ds.sizes["x"] == 5 and ds.sizes["y"] == 6 and ds.sizes["z"] == 9
+        # stored (nx,ny,nz) -> written (z,y,x)
+        assert np.allclose(ds["T"].values[0], np.transpose(fld, (2, 1, 0)))
+    finally:
+        ds.close()

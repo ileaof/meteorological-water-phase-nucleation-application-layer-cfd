@@ -60,7 +60,13 @@ def write_netcdf(snapshots: list, path: str, grid: Grid, attrs: dict) -> str:
     fields = [k for k in snapshots[0] if k != "time"]
     data = {}
     for f in fields:
-        data[f] = (["time", "z", "y", "x"], np.stack([s[f] for s in snapshots]))
+        # cell-centred fields are stored (nx, ny, nz); stack over time then
+        # transpose to the documented CF-style (time, z, y, x) ordering.  The
+        # transpose is essential for non-cubic grids (nx != nz), e.g. the
+        # storm-scale run -- a cubic grid only masked the axis mislabelling.
+        arr = np.stack([s[f] for s in snapshots])          # (time, nx, ny, nz)
+        arr = np.transpose(arr, (0, 3, 2, 1))              # (time, nz, ny, nx)
+        data[f] = (["time", "z", "y", "x"], arr)
     ds = xr.Dataset(
         data_vars=data,
         coords={"time": times, "z": grid.zc, "y": grid.yc, "x": grid.xc},

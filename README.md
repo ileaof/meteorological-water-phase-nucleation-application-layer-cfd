@@ -940,8 +940,12 @@ python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml -
 # pure flow (no microphysics), fast sanity check:
 python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 20 --duration 60 --no-microphysics --output outputs/flow_pure
 
+# TWO-WAY storm / precipitation run (Increment 2): the flow drives the microphysics
+# (hydrometeor growth + latent-heat feedback + sedimentation). --threads is unused here:
+python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 20 --duration 60 --two-way-coupling --output outputs/flow_coupled --threads 8
+
 # after `pip install -e .` the console script is available:
-meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 40 --duration 120 --one-way-coupling
+meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 40 --duration 120 --two-way-coupling
 ```
 
 ### 25.2 Flags
@@ -955,6 +959,7 @@ meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resoluti
 | `--output-interval N` | snapshot + nucleation cadence in steps |
 | `--threads N` | multiprocessing threads for the lookup build |
 | `--one-way-coupling` | stage = one_way (diagnostic nucleation) |
+| `--two-way-coupling` / `--hydrometeors` | stage = hydrometeor (two-way microphysics: growth + latent heat + sedimentation) |
 | `--no-microphysics` | stage = none (pure flow) |
 | `--diagnostic-only` | alias for one-way |
 | `--method direct\|lookup` | kernel evaluation method (lookup required at scale) |
@@ -1089,15 +1094,14 @@ reservoir + graupel embryos in a strong updraft) whose hail descends through the
 0 °C level, partly melts (adding to the rain), and the survivors reach the
 ground.
 
-> **Scope.** This example runs the standalone **0-D** `precip_microphysics`
-> driver (two conceptual cores); it does **not** invoke the 3D
-> `meteorological_flow` solver (Part II). The "updraft" and "moisture
-> convergence" are parameterized boundary forcings that stand in for what a 3D
-> storm circulation would provide. Coupling the microphysics into the 3D flow
-> (transport + sedimentation + latent-heat feedback on the resolved circulation)
-> is the remaining **Increment 2** step; note also that the current 3D solver is
-> a demonstration-scale 100 m mixing chamber, not a km-scale storm, so it would
-> not by itself produce ~100 mm.
+> **Scope.** This example is the standalone **0-D** `precip_microphysics` driver
+> (two conceptual cores); its "updraft" and "moisture convergence" are
+> parameterized forcings standing in for a 3D circulation. For the **two-way
+> 3D-coupled** run — where the `meteorological_flow` solver (Part II) actually
+> drives the microphysics — see [§28.4](#284-two-way-3d-coupled-run--the-fluid-flow-drives-the-microphysics).
+> The 3D solver is a demonstration-scale ~1 km chamber, not a km-scale storm, so
+> the coupled run's accumulation is small; the ~100 mm figure here is the 0-D
+> conceptual storm.
 
 ### 28.1 Run it
 
@@ -1177,6 +1181,40 @@ confidence 1.0), and water is conserved to ~1e-16 in each core.
 > 100 mm of *hail* specifically would demand ~4000 mm of rain, which is
 > unphysical — so "≈100 mm of rain and hail" is delivered as ~100 mm rain plus a
 > few mm of confirmed hail. The run is locked by `tests/test_heavy_scenario.py`.
+
+### 28.4 Two-way 3D-coupled run — the fluid flow drives the microphysics
+
+**Increment 2** couples the bulk microphysics **into** the 3D `meteorological_flow`
+solver: the resolved circulation forms cloud / ice / rain / snow / graupel / hail,
+the latent heat feeds back into the transported potential temperature, and the
+precipitating species are transported and sediment to the surface. Run it via the
+flow CLI (the `--two-way-coupling` flag) or the example script:
+
+```bash
+python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 20 --duration 60 --two-way-coupling --output outputs/flow_coupled --threads 8
+python examples/storm_flow_coupled.py
+```
+
+Sample output (16×16×24, 1.5 km deep, 90 s) — **the fluid flow ran and drove the
+microphysics**:
+
+```
+=== the fluid flow ran ===
+  steps = 2165, final t = 90.0 s, max CFL = 0.400
+  T range = 249.3 .. 296.1 K, max |w| = 60.30 m/s
+  max S_w = 1.236, max S_i = 1.251
+=== microphysics formed by the flow (max mixing ratio, kg/kg) ===
+  cloud liquid 6.9e-03   cloud ice 2.7e-03   rain 1.7e-04   graupel 4.6e-06
+=== surface precipitation (domain-mean) ===
+  rain 2.08e-03 mm     (chamber-scale)
+```
+
+This is **demonstration-scale** (a ~1 km chamber, seconds of simulated time), so
+the surface accumulation is small — the coupling is genuinely two-way, but a
+~100 mm event needs a km-scale, long-lived storm circulation (the 0-D example
+above). The nucleation core stays read-only; the microphysics conserves water
+(surface precipitation is the only sink). Locked by
+`tests/test_flow_microphysics_coupling.py`.
 
 ---
 

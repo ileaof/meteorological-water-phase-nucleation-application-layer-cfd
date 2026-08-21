@@ -240,6 +240,7 @@ def apply_overrides(cfg: SimulationConfig, *,
                    no_microphysics: bool = False,
                    one_way: bool = False,
                    diagnostic_only: bool = False,
+                   two_way: bool = False,
                    method: str | None = None,
                    threads: int | None = None) -> SimulationConfig:
     """Return a copy of cfg with CLI overrides applied."""
@@ -257,6 +258,8 @@ def apply_overrides(cfg: SimulationConfig, *,
         cfg.nucleation.stage = "none"
     if one_way or diagnostic_only:
         cfg.nucleation.stage = "one_way"
+    if two_way:
+        cfg.nucleation.stage = "hydrometeor"   # full two-way microphysics coupling
     if method is not None:
         cfg.nucleation.method = method
     # threads stored on the lookup config for the table build

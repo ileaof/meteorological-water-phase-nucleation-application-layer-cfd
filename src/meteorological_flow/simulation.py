@@ -118,9 +118,10 @@ class Simulation:
         # the two inflows (see boundary_conditions), so mean(div)=0 and the
         # projected velocity is divergence-free -> monotone scalar advection.
         self.pressure = PressureSolver(self.grid, method=_pressure_method(self.grid))
-        # nucleation
+        # nucleation (diagnostic, one-way) vs microphysics (two-way coupling)
         self.stage = cfg.nucleation.stage
-        self.do_nucleation = self.stage != "none"
+        self.do_nucleation = self.stage == "one_way"
+        self.do_microphysics = self.stage in ("vapor_depletion", "thermal_feedback", "hydrometeor")
         self.adapter = None
         self.lookup = None
         if self.do_nucleation:
@@ -128,6 +129,10 @@ class Simulation:
             if cfg.nucleation.method == "lookup":
                 self.lookup, _ = _build_lookup(cfg, cfg.output.outdir, self.adapter)
                 self.adapter.set_lookup(self.lookup)
+        self.coupler = None
+        if self.do_microphysics:
+            from .microphysics_coupling import MicrophysicsCoupler
+            self.coupler = MicrophysicsCoupler()
         # bookkeeping
         self.snapshots = []
         self.history = []
@@ -199,10 +204,14 @@ class Simulation:
         if clip_loss < 0:
             self._last_clip = clip_loss
         st.qv = np.maximum(qv_new, 0.0)
-        if self.stage == "hydrometeor":   # Batch 2 transport hook (stub here)
-            st.ql = adv.advect_center(st.ql, Uc, Vc, Wc, g, dt, order)
-            st.qi = adv.advect_center(st.qi, Uc, Vc, Wc, g, dt, order)
-            st.ql = np.maximum(st.ql, 0.0); st.qi = np.maximum(st.qi, 0.0)
+        if self.do_microphysics:   # transport cloud + precipitating hydrometeors
+            st.ensure_hydrometeors()
+            st.ql = np.maximum(adv.advect_center(st.ql, Uc, Vc, Wc, g, dt, order), 0.0)
+            st.qi = np.maximum(adv.advect_center(st.qi, Uc, Vc, Wc, g, dt, order), 0.0)
+            st.qr = np.maximum(adv.advect_center(st.qr, Uc, Vc, Wc, g, dt, order), 0.0)
+            st.qs = np.maximum(adv.advect_center(st.qs, Uc, Vc, Wc, g, dt, order), 0.0)
+            st.qg = np.maximum(adv.advect_center(st.qg, Uc, Vc, Wc, g, dt, order), 0.0)
+            st.qh = np.maximum(adv.advect_center(st.qh, Uc, Vc, Wc, g, dt, order), 0.0)
         st.theta = dif.diffuse_center(st.theta, g, cfg.flow.kappa, dt)
         st.qv = dif.diffuse_center(st.qv, g, cfg.flow.kappa, dt)
         st.qv = np.maximum(st.qv, 0.0)
@@ -210,6 +219,15 @@ class Simulation:
         bc.apply_scalar_bcs(st, g, cfg)
         bc.apply_velocity_bcs(st, g, cfg)
         st.diagnose(cfg)
+        # 6. two-way microphysics: growth/conversion + embryo source + latent-heat
+        #    feedback on theta, then gravitational sedimentation to the surface.
+        if self.do_microphysics and self.coupler is not None:
+            nf = self.last_nf if (self.do_nucleation and self.lookup is not None) else None
+            self.coupler.apply(st, g, dt, nf=nf)
+            self.coupler.sediment(st, g, dt)
+            self.coupler.zero_inflow_hydrometeors(st)
+            bc.apply_scalar_bcs(st, g, cfg)
+            st.diagnose(cfg)
         st.t = self.t + dt
 
     # ---- nucleation diagnostics (one-way) ----
@@ -340,6 +358,11 @@ class Simulation:
                 "Not operational weather prediction; demonstration-scale only.",
             ],
         }
+        report["stage_microphysics"] = bool(self.do_microphysics)
+        if getattr(self.state, "surface_precip", None) is not None:
+            prec = {c: float(np.mean(v)) for c, v in self.state.surface_precip.items()}
+            prec["total_mm"] = float(sum(prec.values()))
+            report["surface_precip_mm"] = prec
         if "json" in cfg.output.format:
             fio.write_json(report, os.path.join(outdir, "summary.json"))
         return report

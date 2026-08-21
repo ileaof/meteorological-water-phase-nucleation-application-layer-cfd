@@ -27,8 +27,15 @@ class FlowState:
     p: np.ndarray            # perturbation pressure at centres
     theta: np.ndarray        # potential temperature at centres
     qv: np.ndarray
-    ql: np.ndarray
-    qi: np.ndarray
+    ql: np.ndarray           # cloud liquid (q_c)
+    qi: np.ndarray           # cloud ice
+    # precipitating hydrometeors (Increment 2 two-way microphysics; default zeros)
+    qr: np.ndarray = None    # rain
+    qs: np.ndarray = None    # snow
+    qg: np.ndarray = None    # graupel
+    qh: np.ndarray = None    # hail
+    # accumulated surface precipitation [kg/m^2 == mm], per category (2-D over x,y)
+    surface_precip: dict = None
     t: float = 0.0           # simulation time [s]
     # diagnosed (filled by .diagnose())
     T: np.ndarray = None
@@ -48,7 +55,20 @@ class FlowState:
             u=np.zeros(grid.u_shape), v=np.zeros(grid.v_shape), w=np.zeros(grid.w_shape),
             p=grid.zeros_c(), theta=grid.zeros_c(),
             qv=grid.zeros_c(), ql=grid.zeros_c(), qi=grid.zeros_c(),
+            qr=grid.zeros_c(), qs=grid.zeros_c(), qg=grid.zeros_c(), qh=grid.zeros_c(),
+            surface_precip={c: np.zeros((grid.nx, grid.ny)) for c in ("rain", "snow", "graupel", "hail")},
         )
+
+    def ensure_hydrometeors(self) -> None:
+        """Guarantee the precipitating fields exist (zeros) — e.g. after a
+        restart written before Increment 2."""
+        g = self.grid
+        for name in ("qr", "qs", "qg", "qh"):
+            if getattr(self, name) is None:
+                setattr(self, name, g.zeros_c())
+        if self.surface_precip is None:
+            self.surface_precip = {c: np.zeros((g.nx, g.ny))
+                                   for c in ("rain", "snow", "graupel", "hail")}
 
     def diagnose(self, cfg: SimulationConfig) -> None:
         """Fill the diagnosed thermodynamic fields from the prognostic state.
@@ -77,11 +97,16 @@ class FlowState:
         self.gradT_mag = g.grad_magnitude(self.T)
 
     def copy(self) -> FlowState:
+        _c = lambda a: None if a is None else a.copy()
         return FlowState(
             grid=self.grid,
             u=self.u.copy(), v=self.v.copy(), w=self.w.copy(), p=self.p.copy(),
             theta=self.theta.copy(), qv=self.qv.copy(), ql=self.ql.copy(),
-            qi=self.qi.copy(), t=self.t,
+            qi=self.qi.copy(),
+            qr=_c(self.qr), qs=_c(self.qs), qg=_c(self.qg), qh=_c(self.qh),
+            surface_precip=None if self.surface_precip is None
+            else {k: v.copy() for k, v in self.surface_precip.items()},
+            t=self.t,
             T=None if self.T is None else self.T.copy(),
             P_total=None if self.P_total is None else self.P_total.copy(),
             rho=None if self.rho is None else self.rho.copy(),
@@ -100,7 +125,12 @@ class FlowState:
         return np.sqrt(uc ** 2 + vc ** 2 + wc ** 2)
 
     def total_water(self) -> float:
-        return float((self.qv + self.ql + self.qi).sum() * self.grid.cell_vol)
+        tot = self.qv + self.ql + self.qi
+        for name in ("qr", "qs", "qg", "qh"):
+            a = getattr(self, name)
+            if a is not None:
+                tot = tot + a
+        return float(tot.sum() * self.grid.cell_vol)
 
 
 __all__ = ["FlowState"]

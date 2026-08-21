@@ -36,6 +36,10 @@ def build_argparser() -> argparse.ArgumentParser:
                    help="diagnostic nucleation; state not modified (Batch 1)")
     p.add_argument("--diagnostic-only", action="store_true",
                    help="alias for one-way coupling")
+    p.add_argument("--two-way-coupling", "--hydrometeors", dest="two_way_coupling",
+                   action="store_true",
+                   help="two-way microphysics: hydrometeor growth + latent-heat "
+                        "feedback + sedimentation (Increment 2)")
     p.add_argument("--method", choices=("lookup", "direct"), default=None,
                    help="nucleation evaluation method")
     p.add_argument("--restart", default=None, help="restart from .npz checkpoint")
@@ -64,8 +68,8 @@ def main(argv=None) -> int:
         cfg, grid_resolution=args.grid_resolution, duration=args.duration,
         output_interval=args.output_interval, output=args.output,
         no_microphysics=args.no_microphysics, one_way=args.one_way_coupling,
-        diagnostic_only=args.diagnostic_only, method=args.method,
-        threads=args.threads)
+        diagnostic_only=args.diagnostic_only, two_way=args.two_way_coupling,
+        method=args.method, threads=args.threads)
 
     if args.dry_run:
         return _dry_run(cfg)
@@ -137,9 +141,18 @@ def _print_report(report: dict) -> None:
     print(f"  T range      : {s['T_min']:.2f} .. {s['T_max']:.2f} K")
     print(f"  max |u|      : {s['umax']:.3f} m/s   max |w|: {s['wmax']:.3f} m/s")
     print(f"  max S_w/S_i  : {s['S_w_max']:.3f} / {s['S_i_max']:.3f}")
-    print(f"  max log10I   : liq={s['log10I_liq_max']:.2f}  ice={s['log10I_ice_max']:.2f}")
-    print(f"  liq nuc cells: {s['n_liq_nucleation_cells']}  "
-          f"ice nuc cells: {s['n_ice_nucleation_cells']}")
+    import math as _m
+    _lq, _ic = s.get('log10I_liq_max', float('-inf')), s.get('log10I_ice_max', float('-inf'))
+    if _m.isfinite(_lq) or _m.isfinite(_ic):
+        print(f"  max log10I   : liq={_lq:.2f}  ice={_ic:.2f}")
+        print(f"  liq nuc cells: {s['n_liq_nucleation_cells']}  "
+              f"ice nuc cells: {s['n_ice_nucleation_cells']}")
+    if report.get("stage_microphysics"):
+        prec = report.get("surface_precip_mm", {})
+        print(f"  microphysics : two-way (hydrometeors + latent heat + sedimentation)")
+        print(f"  surface precip [mm]: rain={prec.get('rain', 0):.3e} "
+              f"snow={prec.get('snow', 0):.3e} graupel={prec.get('graupel', 0):.3e} "
+              f"hail={prec.get('hail', 0):.3e}  total={prec.get('total_mm', 0):.3e}")
     b = report["final_budgets"]
     print(f"  water rel err: {b['total_water_rel_err']:.2e}")
     print(f"  energy rel err: {b['total_energy_rel_err']:.2e}")

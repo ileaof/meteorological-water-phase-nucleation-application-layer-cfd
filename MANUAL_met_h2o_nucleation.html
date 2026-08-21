@@ -157,9 +157,12 @@
     <li class="sub"><a href="#c7">7 · p_v direct</a></li>
     <li class="sub"><a href="#c8">8 · warm regime</a></li>
     <li class="sub"><a href="#c9">9 · validate</a></li>
+    <li class="sub"><a href="#c10">10 · frontal collision</a></li>
     <li class="group"><a href="#examples">Examples</a></li>
     <li><a href="#conventions">Conventions</a></li>
     <li><a href="#validity">Validity</a></li>
+    <li><a href="#troubleshooting">Troubleshooting</a></li>
+    <li><a href="#citation">Citation &amp; license</a></li>
     <li><a href="#files">File map</a></li>
   </ol>
 </nav>
@@ -182,24 +185,27 @@
   <h2>What this layer is — and isn't</h2>
   <p>It is an <strong>application/diagnosis layer</strong>: given an atmospheric state (temperature, pressure, humidity, vertical velocity, water contents, cooling rate, timestep, cell volume) it resolves the local nucleation state via the validated core, decomposes the free energy, computes the nucleation rate and <code>expected_events = I&middot;dt&middot;V_cell</code>, and emits a precipitation-favourability diagnosis (rain/snow/graupel/hail indices + a diagnostic class) with explicit confidence and caveats.</p>
   <p>It is <strong>not</strong> a hydrometeor-growth model and <strong>not</strong> an operational forecast. Condensation/deposition, collision&ndash;coalescence, accretion, riming, melting and refreezing are <em>not</em> modelled. High <code>I</code> flags nucleation favourability, never a rain/hail forecast. The diagnosis states exactly which dynamic and microphysical data an operational forecast would still require.</p>
-  <p>The validated core is imported <strong>read-only</strong> (importlib, SHA-256 guarded) and is never modified by this layer. All closure, critical-radius, surface-stress and rate physics is delegated to it.</p>
+  <p>The validated core is <strong>bundled in this repository</strong> and imported <strong>read-only</strong> (importlib, SHA-256 guarded); it is never modified by this layer. All closure, critical-radius, surface-stress and rate physics is delegated to it.</p>
+  <p class="note"><span class="nb">Physics in one line</span>Classical theory fixes the critical radius at a single equilibrium; this framework (Ferreira, Eq.&nbsp;39a/39b) nucleates under a <strong>thermal gradient</strong> &nabla;T that <em>shifts</em> the local equilibrium, so the germ sees <code>P_eq,shift = P_sat,phase(T_local)</code>. The closure <code>F(g;r)=&Gamma;&sup2;/(4&pi;r&sup2;)&minus;g=0</code> ties &nabla;T to the continuation radius (Brent-solved, or set with <code>--gradT</code>); the critical radius is the 2nd-order parabolic root <code>r_critical_2nd_m</code>. Read &nabla;T as the <em>local</em> interface gradient (1&ndash;10&#8308; K/m), not a synoptic front.</p>
 </section>
 
 <section id="reqs">
   <p class="eyebrow">Setup</p>
-  <h2>Requirements</h2>
-  <p>Python 3.8+ with the core's three packages, plus pandas and xarray for the structured I/O. Matplotlib is forced headless (<code>Agg</code>).</p>
-  <div class="cmd">pip install numpy scipy matplotlib pandas xarray</div>
+  <h2>Install &amp; requirements</h2>
+  <p>Requires <strong>Python 3.9+</strong>. <code>numpy</code>, <code>scipy</code> and <code>matplotlib</code> are <strong>required</strong> — the bundled core imports all three at load time (matplotlib is forced headless, <code>Agg</code>). The repository is <strong>self-contained</strong>: the validated core, the <code>het_contact_angle</code> module and the two SHA-256-guarded reference models are all bundled, so no <code>PYTHONPATH</code> or external checkout is needed.</p>
+  <div class="cmd">git clone https://github.com/ileaof/meteorological-water-phase-nucleation-application-layer.git
+cd meteorological-water-phase-nucleation-application-layer
+python -m pip install -r requirements.txt
+python met_h2o_nucleation.py --validate        # -&gt; SELF-CHECKS PASS</div>
   <div class="tbl"><table>
-    <tr><th>Dependency</th><th>Used for</th><th>Notes</th></tr>
-    <tr><td>numpy / scipy</td><td>delegated core physics</td><td>closure via <code>brentq</code></td></tr>
-    <tr><td>matplotlib</td><td>all figures (PNG &ge; 300 dpi)</td><td>headless <code>Agg</code></td></tr>
-    <tr><td>pandas</td><td>CSV output</td><td>mandatory schema</td></tr>
-    <tr><td>xarray</td><td>field ingestion + structured output</td><td>NetCDF3 via scipy engine</td></tr>
-    <tr><td>netCDF4 / cfgrib / h5netcdf</td><td>NetCDF4/HDF5 + GRIB read</td><td><strong>optional</strong> — absent backends degrade gracefully to <code>"undetermined"</code></td></tr>
+    <tr><th>Dependency</th><th>Required?</th><th>Used for</th></tr>
+    <tr><td>numpy / scipy</td><td><strong>yes</strong></td><td>core physics + closure via <code>brentq</code> (imported at load)</td></tr>
+    <tr><td>matplotlib</td><td><strong>yes</strong></td><td>imported by the core at load (headless <code>Agg</code>); also all figures</td></tr>
+    <tr><td>xarray</td><td>optional</td><td>field ingestion + structured NetCDF output (NetCDF3 via scipy)</td></tr>
+    <tr><td>netCDF4 / h5netcdf</td><td>optional</td><td>NetCDF4 / HDF5 read/write</td></tr>
+    <tr><td>cfgrib + eccodes</td><td>optional</td><td>GRIB ingestion</td></tr>
   </table></div>
-  <p>Run from the project root so the core subfolder is found relative to <code>__file__</code>:</p>
-  <div class="cmd">cd C:\Users\ileao\OneDrive\Documentos\Nucleation</div>
+  <p>Absent optional backends <strong>degrade gracefully</strong> to <code>"undetermined"</code> (naming the missing package) rather than crashing.</p>
 </section>
 
 <section id="quick">
@@ -530,6 +536,38 @@ python example_met_frontal_collision.py</div>
     <tr><td>Experimental / hypothesis</td><td>precipitation favourability indices, diagnostic class — flags, not forecasts; hydrometeor growth unmodelled</td></tr>
   </table></div>
   <p class="note warn"><span class="nb">Out of scope</span>Condensation/deposition growth, collision-coalescence, accretion, riming, melting/refreezing are NOT modelled. The diagnosis flags favourability and states which dynamic/microphysical data (w, LWC/IWC, CCN/INP, cooling rate, freezing level, residence time, hydrometeor trajectories) an operational rain/hail forecast would still require.</p>
+</section>
+
+<section id="troubleshooting">
+  <p class="eyebrow">Help</p>
+  <h2>Troubleshooting</h2>
+  <div class="tbl"><table>
+    <tr><th>Symptom</th><th>Cause &amp; fix</th></tr>
+    <tr><td><code>ModuleNotFoundError: het_contact_angle</code> (or the core)</td><td>Run from the cloned repo root. <code>het_contact_angle.py</code> and the <code>unified_h2o_nucleation_climate/</code> core are bundled there; if you copied only <code>met_h2o_nucleation.py</code> elsewhere, copy the siblings too or put the repo root on <code>PYTHONPATH</code>.</td></tr>
+    <tr><td><code>--validate</code> &rarr; <em>ice reference script not found</em> / VALIDATION FAILED</td><td>The SHA-256 guard needs the two reference models (<code>Nucleation_model_H2O_vapour_solid_Sim_2026_paper.py</code>, <code>&hellip;_liquid_Sim_2026.py</code>) at the repo root, one level above <code>unified_h2o_nucleation_climate/</code>. They are bundled; copy them if you took only the module.</td></tr>
+    <tr><td><code>ImportError</code> for scipy or matplotlib</td><td>Both are <strong>required</strong> — the bundled core imports them at load. <code>pip install -r requirements.txt</code>. matplotlib uses the headless <code>Agg</code> backend, so no display is needed.</td></tr>
+    <tr><td>NetCDF read/write warns about the engine or fails</td><td><code>to_netcdf</code>/<code>from_netcdf</code> fall back <code>netcdf4 &rarr; h5netcdf &rarr; scipy</code>; with only scipy you get NetCDF3. <code>pip install netCDF4</code> for NetCDF4/HDF5.</td></tr>
+    <tr><td><code>from_grib</code> raises <code>RuntimeError</code></td><td>GRIB ingestion needs <code>cfgrib</code> + <code>eccodes</code> (<code>pip install cfgrib eccodes</code>).</td></tr>
+    <tr><td>Every physics field <code>undetermined</code>, <code>status = subsaturated</code></td><td>The state is below saturation (S&lt;1) in <code>auto</code>/single-phase mode — correct behaviour, not an error. Raise <code>--RH</code>/<code>--p-v</code>, or use <code>--phase-mode both</code> to force the closure.</td></tr>
+    <tr><td><code>r_critical_2nd_m</code> comes out sub-micron</td><td>Usually a bad <code>--r-ref</code>; the default <code>1e-7 m</code> gives &micro;m-order critical radii.</td></tr>
+    <tr><td>Unicode / <code>cp1252</code> errors printing on Windows</td><td>The examples wrap stdout as UTF-8. If you print reports yourself, set <code>PYTHONUTF8=1</code> or reconfigure stdout to UTF-8.</td></tr>
+  </table></div>
+</section>
+
+<section id="citation">
+  <p class="eyebrow">Cite</p>
+  <h2>Citation &amp; license</h2>
+  <p>If you use this tool in academic work, please cite the underlying shifted-equilibrium framework: Ferreira, <em>Physica B: Condensed Matter</em> <strong>695</strong> (2024) 416494; and the MRS Meeting 2026 contribution on the meteorological water-phase nucleation application layer.</p>
+  <div class="cmd">@article{ferreira2024shifted,
+  author  = {Ferreira},          % TODO: complete the author list
+  title   = {},                   % TODO: article title
+  journal = {Physica B: Condensed Matter},
+  volume  = {695},
+  pages   = {416494},
+  year    = {2024},
+  doi     = {}                     % TODO
+}</div>
+  <p class="note warn"><span class="nb">License</span>No <code>LICENSE</code> file is currently included, which by default means <strong>all rights reserved</strong>. To permit reuse, add a licence (MIT, BSD-3-Clause, Apache-2.0, &hellip;); until then, contact the author for permission. The bundled core and its reference models are integrity-guarded and read-only.</p>
 </section>
 
 <section id="files">

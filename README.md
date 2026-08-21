@@ -7,8 +7,9 @@ Eq.39a/39b shifted-equilibrium framework
 This is the reference manual for `met_h2o_nucleation.py` (the application /
 diagnosis layer). The physics core it wraps —
 `unified_h2o_nucleation_climate/unified_h2o_nucleation_climate.py` — is
-documented separately; this layer **imports it read-only and never modifies
-it**. For hypotheses, validity ranges and the validation report see
+**bundled in this repository** and **imported read-only, never modified** (its
+integrity is SHA-256 guarded). For hypotheses, validity ranges and the
+validation report see
 `MET_NUCLEATION_HYPOTHESES.md`; for the test suite see
 `test_met_nucleation.py`.
 
@@ -62,6 +63,30 @@ ice-reference SHA-256 guard) are **delegated** to the core. This layer adds only
 what the core deliberately does not own: free-energy decomposition,
 precipitation diagnosis, I/O adapters, the full report schema, visualisation.
 
+### 1.2 The physics in brief
+
+Classical nucleation theory fixes the critical radius from a balance of bulk and
+surface free energy at a *single* equilibrium. This framework (Ferreira,
+Eq. 39a/39b) treats nucleation under a **thermal gradient** instead: a non-zero
+∇T across the embryo *shifts* the local equilibrium, so the saturation pressure
+the germ actually sees is `P_eq,shift = P_sat,phase(T_local)` rather than
+`P_sat,phase(T_ambient)`. What the tool reports follows from that shift:
+
+* the **closure** `F(g;r) = Γ²/(4πr²) − g = 0` ties the gradient `g = ∇T` to the
+  continuation radius `r`; with `r` pinned at `r_ref`, the gradient is the
+  Brent-solved unknown (or you prescribe it with `--gradT`);
+* the **critical radius** is the root of a **2nd-order (parabolic) stationarity**
+  condition (Eq. 39b), reported as `r_critical_2nd_m` — the principal result —
+  next to the classical 1st-order value for comparison;
+* the **nucleation barrier and rate** follow from the shifted state and are
+  decomposed into bulk / surface / configurational parts;
+* everything downstream (rate → favourability → diagnostic class) is a
+  *diagnosis* of this shifted-equilibrium state. The tool never invents
+  hydrometeor growth, and never turns a high rate into a precipitation forecast.
+
+Read `∇T` here as the **local** temperature gradient at the embryo interface
+(validated 1–10⁴ K/m), not a synoptic front gradient (~10⁻³ K/m).
+
 ---
 
 ## 2. Dependencies
@@ -69,46 +94,66 @@ precipitation diagnosis, I/O adapters, the full report schema, visualisation.
 | Package | Required? | Used for |
 |---|---|---|
 | `numpy` | yes | arrays, numerics |
-| `scipy` | yes | `brentq` (thermal closure) |
-| `matplotlib` | optional | figures (`MetNucleationPlotter`) |
+| `scipy` | yes | `brentq` (thermal closure); imported by the bundled core at load |
+| `matplotlib` | yes | imported by the bundled core at load (headless `Agg` backend); also drives `MetNucleationPlotter` figures |
 | `xarray` | optional | `from_xarray`, `to_xarray`, NetCDF I/O |
 | `netCDF4` / `h5netcdf` | optional | NetCDF4/HDF5 read/write |
 | `cfgrib` + `eccodes` | optional | GRIB ingestion |
 | `pandas` | optional | convenience |
 
-If an optional backend is absent, the relevant path **degrades gracefully** to
+`numpy`, `scipy` and `matplotlib` are **required** just to import the package,
+because the bundled core imports all three at load time. The remaining backends
+are optional: if one is absent the relevant path **degrades gracefully** to
 `"undetermined"` naming the missing dependency rather than crashing
 (`from_grib` raises a clear `RuntimeError` telling you to install `cfgrib`;
 `from_netcdf` tries `netcdf4 → h5netcdf → scipy` and falls back to NetCDF3 via
-the scipy engine when only scipy is present).
+the scipy engine when only scipy is present). Install everything with
+`pip install -r requirements.txt`.
 
-The validated core is loaded by `importlib` via a `__file__`-relative search:
-the module looks for `unified_h2o_nucleation_climate/` in its own folder, then
-one and two levels up (the repo root), so it runs from any working directory.
-This module lives in the `met_h2o_nucleation/` subfolder; the core stays at the
-repo root and is **never modified** (SHA-256 guarded).
+The validated core is **bundled in this repository** under
+`unified_h2o_nucleation_climate/` and loaded by `importlib` via a
+`__file__`-relative search: the module (which sits at the repo root) looks for
+`unified_h2o_nucleation_climate/` in its own folder, then one and two levels up,
+so it runs from any working directory with **no `PYTHONPATH`**. The core and its
+two SHA-256-guarded reference models (`Nucleation_model_H2O_vapour_*_Sim_2026*.py`,
+which the guard checks byte-for-byte) are **never modified** by this layer.
 
 ---
 
-## 3. Quick start
+## 3. Installation & quick start
 
-### 3.1 Command line
+### 3.1 Install
+
+```bash
+git clone https://github.com/ileaof/meteorological-water-phase-nucleation-application-layer.git
+cd meteorological-water-phase-nucleation-application-layer
+python -m pip install -r requirements.txt      # numpy, scipy, matplotlib (required)
+python met_h2o_nucleation.py --validate         # prove the bundled core is intact -> SELF-CHECKS PASS
+```
+
+Requires **Python ≥ 3.9**. The repository is **self-contained**: the validated
+core (`unified_h2o_nucleation_climate/`), the `het_contact_angle` module and the
+two SHA-256-guarded reference models are all bundled, so no `PYTHONPATH` or
+external checkout is needed. A successful `--validate` run ends with
+`SELF-CHECKS PASS` (see Case 9).
+
+### 3.2 Command line
 
 ```bash
 # one state, both phases, supersaturated, with dynamics + a JSON dump
-# (run from the repo root; the module lives in the met_h2o_nucleation/ folder)
+# (run from the repo root)
 python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both \
         --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --Vcell 1e6 \
-        --json met_h2o_nucleation/out_met_nucleation/cli_report.json
+        --json out_met_nucleation/cli_report.json
 
 # prove the core is untouched and the met-layer self-checks pass
 python met_h2o_nucleation.py --validate
 ```
 
-The CLI prints the full 48-field report for each admissible phase. See §10 for
+The CLI prints the full 48-field report for each admissible phase. See §14 for
 all flags.
 
-### 3.2 Python API (minimal)
+### 3.3 Python API (minimal)
 
 ```python
 import met_h2o_nucleation as M
@@ -847,7 +892,7 @@ python met_h2o_nucleation.py --T 280.75 --P 90000 --p-v 1203.69 \
 | `example_met_frontal_collision.py` | warm-moist × cold-dry air-mass collision → isobaric mixing to the supersaturated frontal-cloud state → both-phase nucleation report + JSON/CSV (see Case 10) |
 
 ```bash
-# run from the repo root (examples auto-write into met_h2o_nucleation/out_met_nucleation/)
+# run from the repo root (examples auto-write into out_met_nucleation/)
 python example_met_single_state.py
 python example_met_vertical_profile.py
 python example_met_xarray_netcdf.py
@@ -905,7 +950,52 @@ the microphysical timestep + cell volume.
 
 ---
 
-## 18. File map
+## 18. Troubleshooting
+
+| Symptom | Cause & fix |
+|---|---|
+| `ModuleNotFoundError: het_contact_angle` (or the core) | Run from the cloned repo root. `het_contact_angle.py` and the `unified_h2o_nucleation_climate/` core are bundled there; if you copied only `met_h2o_nucleation.py` elsewhere, either copy the siblings too or put the repo root on `PYTHONPATH`. |
+| `--validate` → `ice reference script not found` / `VALIDATION FAILED` | The SHA-256 guard needs the two reference models (`Nucleation_model_H2O_vapour_solid_Sim_2026_paper.py`, `…_liquid_Sim_2026.py`) at the repo root, one level above `unified_h2o_nucleation_climate/`. They are bundled; if you copied only the module, copy those two files too. |
+| `ImportError` for `scipy` or `matplotlib` | Both are **required** — the bundled core imports them at load. `pip install -r requirements.txt`. matplotlib uses the headless `Agg` backend, so no display is needed. |
+| NetCDF read/write warns about the engine or fails | `to_netcdf`/`from_netcdf` fall back `netcdf4 → h5netcdf → scipy`; with only scipy present you get NetCDF3. `pip install netCDF4` for NetCDF4/HDF5. |
+| `from_grib` raises `RuntimeError` | GRIB ingestion needs `cfgrib` + `eccodes` (`pip install cfgrib eccodes`). |
+| Every physics field is `undetermined`, `status = subsaturated` | The state is below saturation (S<1) in `auto`/single-phase mode — correct behaviour, not an error. Raise `--RH`/`--p-v`, or use `--phase-mode both` to force the closure regardless. |
+| `r_critical_2nd_m` comes out sub-micron | Usually a bad `--r-ref`; the default `1e-7 m` yields micrometre-order critical radii (see §17). |
+| Unicode / `cp1252` errors when printing on Windows | The examples wrap stdout as UTF-8. If you print reports yourself, set `PYTHONUTF8=1` or reconfigure stdout to UTF-8. |
+
+---
+
+## 19. Citation & license
+
+If you use this tool in academic work, please cite the underlying
+shifted-equilibrium framework:
+
+> Ferreira, *Physica B: Condensed Matter* **695** (2024) 416494; and the
+> MRS Meeting 2026 contribution on the meteorological water-phase nucleation
+> application layer.
+
+```bibtex
+@article{ferreira2024shifted,
+  author  = {Ferreira},          % TODO: complete the author list
+  title   = {},                   % TODO: article title
+  journal = {Physica B: Condensed Matter},
+  volume  = {695},
+  pages   = {416494},
+  year    = {2024},
+  doi     = {}                     % TODO
+}
+```
+
+Complete the `author` / `title` / `doi` fields from the published reference.
+
+**License.** No `LICENSE` file is currently included, which by default means **all
+rights reserved**. To permit reuse, add a licence (e.g. MIT, BSD-3-Clause,
+Apache-2.0); until then, contact the author for permission. Note the bundled core
+and its reference models are integrity-guarded and marked read-only.
+
+---
+
+## 20. File map
 
 ```
 met_h2o_nucleation/                <-- this module (application/diagnosis layer)

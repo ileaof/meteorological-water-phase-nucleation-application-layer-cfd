@@ -1089,12 +1089,27 @@ reservoir + graupel embryos in a strong updraft) whose hail descends through the
 0 °C level, partly melts (adding to the rain), and the survivors reach the
 ground.
 
+> **Scope.** This example runs the standalone **0-D** `precip_microphysics`
+> driver (two conceptual cores); it does **not** invoke the 3D
+> `meteorological_flow` solver (Part II). The "updraft" and "moisture
+> convergence" are parameterized boundary forcings that stand in for what a 3D
+> storm circulation would provide. Coupling the microphysics into the 3D flow
+> (transport + sedimentation + latent-heat feedback on the resolved circulation)
+> is the remaining **Increment 2** step; note also that the current 3D solver is
+> a demonstration-scale 100 m mixing chamber, not a km-scale storm, so it would
+> not by itself produce ~100 mm.
+
 ### 28.1 Run it
 
 ```bash
 python examples/heavy_rain_hail_scenario.py
-python examples/heavy_rain_hail_scenario.py --json outputs/storm.json   # full per-category diagnostics
+python examples/heavy_rain_hail_scenario.py --json outputs/storm.json
 ```
+
+Run it bare to print the summary table; add `--json <path>` to also write the
+full per-category diagnostics to a file. (On Windows `cmd.exe`, do **not** append
+a `# comment` on the same line — `cmd` has no `#` comment syntax and will pass it
+as arguments.)
 
 ### 28.2 How the ~100 mm is set — the moisture supply
 

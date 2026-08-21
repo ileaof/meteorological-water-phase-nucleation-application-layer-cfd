@@ -1312,10 +1312,20 @@ two coupled cores (the standard conceptual model of a hailstorm): a <strong>warm
 (cloud base ≈ 293 K) fed by continuous moisture convergence, and a <strong>cold supercell hail-growth core</strong>
 (a sustained supercooled-liquid reservoir + graupel embryos in a strong updraft) whose hail then descends through
 the 0 °C level, partly melts (adding to the rain) and the survivors reach the ground.</p>
+<p class="note"><strong>Scope.</strong> This example runs the standalone <strong>0-D</strong>
+<code>precip_microphysics</code> driver (two conceptual cores); it does <strong>not</strong> invoke the 3D
+<code>meteorological_flow</code> solver of Part&nbsp;II. The updraft and moisture convergence are parameterized
+boundary forcings standing in for a 3D storm circulation. Coupling the microphysics into the 3D flow (transport,
+sedimentation, latent-heat feedback on the resolved circulation) is the remaining <strong>Increment&nbsp;2</strong>
+step — and note the current 3D solver is a demonstration-scale 100&nbsp;m mixing chamber, not a km-scale storm, so
+it would not by itself produce ~100&nbsp;mm.</p>
 
 <h3>28.1 Run it</h3>
 <pre><code>python examples/heavy_rain_hail_scenario.py
-python examples/heavy_rain_hail_scenario.py --json outputs/storm.json   # full per-category diagnostics</code></pre>
+python examples/heavy_rain_hail_scenario.py --json outputs/storm.json</code></pre>
+<p>Run it bare to print the summary table; add <code>--json PATH</code> to also write the full per-category
+diagnostics to a file. On Windows <code>cmd.exe</code>, do <strong>not</strong> append a <code>#</code> comment on
+the same line — <code>cmd</code> has no <code>#</code> comment syntax and passes it to the script as arguments.</p>
 
 <h3>28.2 How the ~100 mm is set — the moisture supply</h3>
 <p>The physical ceiling on the supply is the updraft's vertical moisture flux, at precipitation efficiency ε:</p>

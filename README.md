@@ -167,9 +167,7 @@ external checkout is needed. A successful `--validate` run ends with
 ```bash
 # one state, both phases, supersaturated, with dynamics + a JSON dump
 # (run from the repo root)
-python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both \
-        --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --Vcell 1e6 \
-        --json out_met_nucleation/cli_report.json
+python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --Vcell 1e6 --json out_met_nucleation/cli_report.json
 
 # prove the core is untouched and the met-layer self-checks pass
 python met_h2o_nucleation.py --validate
@@ -684,8 +682,7 @@ updraft, supercooled LWC/IWC, and a timestep × cell volume so `expected_events`
 is determined.
 
 ```bash
-python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 \
-        --phase-mode both --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --Vcell 1e6 --summary
+python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --Vcell 1e6 --summary
 ```
 
 ```text
@@ -744,8 +741,7 @@ solves it self-consistently from Eq. 17 (`r_C,Het/r_C,Hom`) and reports it as
 `contact_angle_deg`. Compare log₁₀I against Case 2 (homogeneous).
 
 ```bash
-python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 \
-        --phase-mode both --mode heterogeneous --theta 60 --summary
+python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --mode heterogeneous --theta 60 --summary
 ```
 
 ```text
@@ -769,8 +765,7 @@ Override the closure: prescribe the gradient instead of Brent-solving it. A
 steeper gradient shrinks the continuation radius and shifts the local state.
 
 ```bash
-python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 \
-        --phase-mode both --gradT 1e3 --summary
+python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --gradT 1e3 --summary
 ```
 
 ```text
@@ -831,8 +826,7 @@ Above freezing: liquid is slightly supersaturated, ice is *sub* saturated
 cold-type indices collapse.
 
 ```bash
-python met_h2o_nucleation.py --T 285 --P 90000 --RH 102 \
-        --phase-mode both --w 1.0 --LWC 3e-4 --dt 60 --Vcell 1e6 --summary
+python met_h2o_nucleation.py --T 285 --P 90000 --RH 102 --phase-mode both --w 1.0 --LWC 3e-4 --dt 60 --Vcell 1e6 --summary
 ```
 
 ```text
@@ -883,8 +877,7 @@ mixed state *is* the frontal cloud; `example_met_frontal_collision.py` builds it
 the mixed state to the CLI with a modest updraft over the cold wedge:
 
 ```bash
-python met_h2o_nucleation.py --T 280.75 --P 90000 --p-v 1203.69 \
-        --phase-mode both --w 1.5 --LWC 5e-4 --dt 60 --Vcell 1e6 --summary
+python met_h2o_nucleation.py --T 280.75 --P 90000 --p-v 1203.69 --phase-mode both --w 1.5 --LWC 5e-4 --dt 60 --Vcell 1e6 --summary
 ```
 
 ```text

@@ -26,6 +26,31 @@ def build_argparser() -> argparse.ArgumentParser:
     p.add_argument("--grid-resolution", type=int, default=None, metavar="N",
                    help="isotropic cell count nx=ny=nz (e.g. 20, 24, 40); for "
                         "--storm-scale, omit to use the tuned 24x24x40 grid")
+    # explicit domain/grid (CLI precedence over YAML/preset/grid-resolution)
+    p.add_argument("--Lx", type=float, default=None, help="domain length x [m]")
+    p.add_argument("--Ly", type=float, default=None, help="domain length y [m]")
+    p.add_argument("--Lz", type=float, default=None, help="domain length z [m]")
+    p.add_argument("--Nx", type=int, default=None, help="cells in x")
+    p.add_argument("--Ny", type=int, default=None, help="cells in y")
+    p.add_argument("--Nz", type=int, default=None, help="cells in z")
+    p.add_argument("--preset", default=None, choices=sorted(cfgmod.PRESETS),
+                   help="named CPU mesh preset (fast/light/recommended/advanced/"
+                        "convective-column)")
+    p.add_argument("--cfl", type=float, default=None, help="CFL target (0,1]")
+    p.add_argument("--dt-max", type=float, default=None, dest="dt_max",
+                   help="maximum timestep [s]")
+    grp = p.add_mutually_exclusive_group()
+    grp.add_argument("--pressure-drop", type=float, default=None, dest="pressure_drop",
+                     help="total pressure drop across x [Pa]")
+    grp.add_argument("--pressure-gradient", type=float, default=None, dest="pressure_gradient",
+                     help="pressure gradient [Pa/m] (drop = gradient * Lx)")
+    p.add_argument("--float32", action="store_true",
+                   help="performance mode: store the prognostic state in float32")
+    p.add_argument("--max-memory-gb", type=float, default=16.0, dest="max_memory_gb",
+                   help="refuse to run if the estimated field memory exceeds this "
+                        "(override with --force)")
+    p.add_argument("--force", action="store_true",
+                   help="run even if the memory estimate exceeds --max-memory-gb")
     p.add_argument("--duration", type=float, default=None, help="simulation duration [s]")
     p.add_argument("--output-interval", type=int, default=None,
                    help="output + nucleation cadence [steps]")
@@ -75,7 +100,20 @@ def main(argv=None) -> int:
         output_interval=args.output_interval, output=args.output,
         no_microphysics=args.no_microphysics, one_way=args.one_way_coupling,
         diagnostic_only=args.diagnostic_only, two_way=args.two_way_coupling,
-        storm_scale=args.storm_scale, method=args.method, threads=args.threads)
+        storm_scale=args.storm_scale, preset=args.preset,
+        Lx=args.Lx, Ly=args.Ly, Lz=args.Lz, Nx=args.Nx, Ny=args.Ny, Nz=args.Nz,
+        cfl=args.cfl, dt_max=args.dt_max, pressure_drop=args.pressure_drop,
+        pressure_gradient=args.pressure_gradient, float32=args.float32,
+        method=args.method, threads=args.threads)
+
+    # geometry + memory report (always shown so the run records its geometry)
+    print("=== meteorological_flow geometry ===")
+    print(cfgmod.format_geometry(cfg))
+    mem = cfgmod.estimate_memory_gb(cfg)
+    if mem > args.max_memory_gb and not args.force:
+        print(f"\nERROR: estimated memory ~{mem:.2f} GB exceeds --max-memory-gb "
+              f"{args.max_memory_gb:.1f} GB. Reduce N, use --float32, or pass --force.")
+        return 2
 
     if args.dry_run:
         return _dry_run(cfg)

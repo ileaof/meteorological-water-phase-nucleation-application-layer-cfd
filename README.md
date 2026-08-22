@@ -492,7 +492,7 @@ python met_h2o_nucleation.py [--validate]
 | `--r-ref` | 1e-7 | continuation radius [m] |
 | `--gradT` | — | requested thermal gradient [K/m] (else Brent-solved) |
 | `--w` `--LWC` `--IWC` | — | dynamics / water contents |
-| `--dt` `--Vcell` | — | microphysics timestep + cell volume (enable `expected_events`) |
+| `--dt` `--cell-volume` (alias `--Vcell`) | — | timestep + subgrid **control (parcel) volume** [m³] for `expected_events = I·dt·V_cell` — the **local cell** volume, **not** the domain volume (0-D parcel = one cell, so `1e6` = a 100 m parcel). |
 | `--outdir` | `out_met_nucleation` | output directory |
 | `--json` | — | write the full JSON report to this path |
 | `--summary` | off | print the compact one-row-per-phase table instead of the full 48-field report |
@@ -956,7 +956,14 @@ meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resoluti
 | flag | meaning |
 |---|---|
 | `--config PATH` | YAML scenario (default `configs/cold_dry_vs_warm_moist.yaml`) |
-| `--grid-resolution {20,40,50}` | override `nx=ny=nz` (20³ dev default, dx=5 m) |
+| `--Lx --Ly --Lz` [m] | domain dimensions (override YAML); **non-cubic allowed** |
+| `--Nx --Ny --Nz` | cells per axis (override YAML); highest precedence for the grid |
+| `--grid-resolution N` | shortcut for isotropic `nx=ny=nz=N` (any N; overridden by `--Nx…`) |
+| `--preset NAME` | mesh preset: `fast/light/recommended/advanced/convective-column` |
+| `--cfl` / `--dt-max S` | CFL target (0,1] / maximum timestep [s] |
+| `--pressure-drop Pa` / `--pressure-gradient Pa/m` | forcing, mutually exclusive (`drop = gradient·Lx`) |
+| `--float32` | store the prognostic state in float32 (performance/memory mode) |
+| `--max-memory-gb G` / `--force` | refuse to run above the memory estimate G / override |
 | `--duration S` | override simulated duration |
 | `--output DIR` | output directory |
 | `--output-interval N` | snapshot + nucleation cadence in steps |
@@ -981,6 +988,51 @@ report = Simulation(cfg).run()      # -> summary dict (also written to summary.j
 ```
 
 A thin runner is `examples/run_reference_demo.py`.
+
+### 25.4 Domain, grid, CFL & memory
+
+Domain and grid are fully configurable (CLI or YAML; **CLI prevails**). Convention
+is **cell-centred** — `Nx,Ny,Nz` are *cells* (not nodes):
+
+```
+dx = Lx/Nx    dy = Ly/Ny    dz = Lz/Nz
+V_cell   = dx·dy·dz          (volume of ONE cell)
+V_domain = Lx·Ly·Lz          (volume of the WHOLE domain)
+N_cells  = Nx·Ny·Nz
+```
+
+Every run prints this geometry + a memory estimate before starting. **Non-cubic**
+domains (`Lx≠Ly≠Lz`, `Nx≠Ny≠Nz`, `dx≠dy≠dz`) are fully supported (operators,
+pressure solver and sedimentation use `dx,dy,dz` separately). The nucleation
+conversion `N_expected = J·V_cell·Δt` always uses the **local cell volume**
+(`grid.cell_vol`), never `V_domain`.
+
+**CPU mesh presets** (i7-class):
+
+| preset | L [m] | N | Δ [m] | cells | use |
+|---|---|---|---|---|---|
+| `fast` | 1000³ | 25³ | 40 | 15 625 | smoke / dev |
+| `light` | 1000³ | 40³ | 25 | 64 000 | quick mixing |
+| `recommended` | 1000³ | 50³ | 20 | 125 000 | scientific |
+| `advanced` | 1000³ | 100³ | 10 | 1 000 000 | sensitivity (short) |
+| `convective-column` | 2000×2000×5000 | 50×50×125 | 40 | 312 500 | vertical convection |
+
+20–40 m meshes are idealised (coarse LES): droplets, crystals and embryos stay
+subgrid. Benchmark (pure flow, i7, 6 s): 25³ ≈ 3.8 steps/s, 50³ ≈ 0.5 steps/s,
+divmax 9×10⁻¹¹–1×10⁻⁸ (40³ uses direct `splu` and can be *slower* than 50³, which
+uses iterative CG).
+
+**Anisotropic CFL:** `dt = min(dt_adv, dt_diff, dt_max)`,
+`dt_adv = cfl/(|u|/dx+|v|/dy+|w|/dz)`, `dt_diff = 0.5/(K·(1/dx²+1/dy²+1/dz²))`;
+`summary.json` records the limiting process, the geometry and the precision.
+
+**Pressure:** raising `Lx` at fixed `--pressure-drop` lowers the gradient; use
+`--pressure-gradient` to fix it (`p_drop = gradient·Lx`). Both together is rejected.
+
+```bash
+python -m meteorological_flow.cli --Lx 1000 --Ly 1000 --Lz 1000 --Nx 50 --Ny 50 --Nz 50 --duration 1200 --cfl 0.4
+python -m meteorological_flow.cli --preset convective-column --pressure-drop 100 --duration 1800
+```
 
 ## 26. Outputs & the verification gate
 

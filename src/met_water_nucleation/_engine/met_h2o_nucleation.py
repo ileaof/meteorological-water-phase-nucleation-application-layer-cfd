@@ -1613,7 +1613,12 @@ def build_argparser():
     p.add_argument("--LWC", type=float, default=None, help="liquid water content [kg/m^3]")
     p.add_argument("--IWC", type=float, default=None, help="ice water content [kg/m^3]")
     p.add_argument("--dt", type=float, default=None, help="microphysics timestep [s]")
-    p.add_argument("--Vcell", type=float, default=None, help="cell volume [m^3]")
+    p.add_argument("--cell-volume", "--microphysics-volume", "--Vcell", dest="Vcell",
+                   type=float, default=None,
+                   help="subgrid control (parcel) volume [m^3] for "
+                        "expected_events = I*dt*V_cell; this is the LOCAL cell/parcel "
+                        "volume, NOT the domain volume (a 0-D parcel is a single cell). "
+                        "'--Vcell' is a deprecated alias of '--cell-volume'.")
     p.add_argument("--summary", action="store_true",
                    help="print the compact one-row-per-phase table (the manual "
                         "layout) instead of the full 48-field vertical report")

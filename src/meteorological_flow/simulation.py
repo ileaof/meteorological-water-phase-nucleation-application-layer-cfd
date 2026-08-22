@@ -149,6 +149,16 @@ class Simulation:
                 self.state.p0_field = self.base.field(self.base.p0, self.grid.center_shape)
         else:
             self.state = _initial_state(self.grid, cfg, base=self.base)
+        if cfg.physics.precision == "float32":
+            # performance mode: store the prognostic state in float32 (halves the
+            # persistent-state / restart memory).  Intermediate numpy operations
+            # still upcast to float64, so this is a memory mode, not a full
+            # float32 kernel -- documented; float64 is the scientific default.
+            for _nm in ("u", "v", "w", "p", "theta", "qv", "ql", "qi",
+                        "qr", "qs", "qg", "qh", "p0_field"):
+                _a = getattr(self.state, _nm, None)
+                if _a is not None:
+                    setattr(self.state, _nm, _a.astype(np.float32))
         self.state.diagnose(cfg)
         # reference Boussinesq state
         self.T_ref = float(self.state.T.mean()) if cfg.physics.T_ref is None else cfg.physics.T_ref
@@ -181,17 +191,32 @@ class Simulation:
         self.last_nf = NucleationField(self.grid.center_shape)
         self._t0 = _time.perf_counter()
 
-    # ---- CFL ----
+    # ---- CFL (anisotropic, per-axis) ----
     def _dt(self) -> float:
         g = self.grid
-        umag = self.state.velocity_magnitude_center()
-        umax = float(umag.max()) if umag.size else 0.0
-        # safety margin: the predictor (buoyancy + pressure-drop body force) grows
-        # the velocity within a step, so size dt for ~1.25x the current speed.
-        adv_dt = self.cfg.time.cfl * min(g.dx, g.dy, g.dz) / max(1.25 * umax, 1e-9)
+        st = self.state
+        # per-component cell-centre velocity maxima -> anisotropic advective CFL
+        #   dt_adv = cfl / (|u|/dx + |v|/dy + |w|/dz)
+        uc = 0.5 * (st.u[:-1, :, :] + st.u[1:, :, :])
+        vc = 0.5 * (st.v[:, :-1, :] + st.v[:, 1:, :])
+        wc = 0.5 * (st.w[:, :, :-1] + st.w[:, :, 1:])
+        umax = float(np.abs(uc).max()) if uc.size else 0.0
+        vmax = float(np.abs(vc).max()) if vc.size else 0.0
+        wmax = float(np.abs(wc).max()) if wc.size else 0.0
+        inv_adv = umax / g.dx + vmax / g.dy + wmax / g.dz
+        self._inv_adv = inv_adv
+        # 1.25 margin: the predictor (buoyancy + body force) grows |u| within a step.
+        adv_dt = self.cfg.time.cfl / max(1.25 * inv_adv, 1e-12)
+        # anisotropic diffusive limit: dt_diff = 0.5 / (K (1/dx^2 + 1/dy^2 + 1/dz^2))
         diff_coef = max(self.cfg.flow.nu, self.cfg.flow.kappa)
-        diff_dt = 0.5 * min(g.dx, g.dy, g.dz) ** 2 / (3.0 * max(diff_coef, 1e-12))
-        dt = min(adv_dt, diff_dt, self.cfg.time.dt_max)
+        diff_dt = 0.5 / (max(diff_coef, 1e-12)
+                         * (1.0 / g.dx ** 2 + 1.0 / g.dy ** 2 + 1.0 / g.dz ** 2))
+        dt_max = self.cfg.time.dt_max
+        candidates = {"advective": adv_dt, "diffusive": diff_dt, "dt_max": dt_max}
+        self._dt_limiter = min(candidates, key=candidates.get)
+        dt = candidates[self._dt_limiter]
+        if self._dt_limiter != "dt_max":
+            self._n_dt_reductions = getattr(self, "_n_dt_reductions", 0) + 1
         return max(dt, 1e-6)
 
     # ---- one Chorin step ----
@@ -313,9 +338,8 @@ class Simulation:
             dt = self._dt()
             if self.t + dt > duration:
                 dt = duration - self.t
-            # CFL diagnostic (advective)
-            umax = float(self.state.velocity_magnitude_center().max())
-            cfl_now = umax * dt / min(g.dx, g.dy, g.dz)
+            # anisotropic advective CFL diagnostic: (|u|/dx+|v|/dy+|w|/dz) * dt
+            cfl_now = getattr(self, "_inv_adv", 0.0) * dt
             max_cfl = max(max_cfl, cfl_now)
             self._step(dt)
             self.step += 1
@@ -424,6 +448,13 @@ class Simulation:
             "limitations": limitations,
         }
         report["stage_microphysics"] = bool(self.do_microphysics)
+        from .config import estimate_memory_gb as _mem
+        from .config import geometry as _geom
+        report["geometry"] = _geom(cfg)
+        report["memory_estimate_gb"] = _mem(cfg)
+        report["precision"] = cfg.physics.precision
+        report["cfl_limiter_last"] = getattr(self, "_dt_limiter", None)
+        report["n_dt_reductions"] = getattr(self, "_n_dt_reductions", 0)
         if getattr(self.state, "surface_precip", None) is not None:
             prec = {c: float(np.mean(v)) for c, v in self.state.surface_precip.items()}
             prec["total_mm"] = float(sum(prec.values()))

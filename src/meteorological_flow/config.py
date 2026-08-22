@@ -60,6 +60,8 @@ class PhysicsConfig:
     T_ref: float | None = None   # reference T for Boussinesq buoyancy; None=mean
     scenario: str = "mixing_chamber"   # mixing_chamber | deep_convection (storm-scale)
     bubble_dtheta: float = 3.0         # warm-bubble amplitude [K] (deep_convection)
+    precision: str = "float64"         # float64 (scientific) | float32 (performance)
+    pressure_gradient: float | None = None   # if set, p_drop = gradient * Lx [Pa/m]
 
 
 @dataclass
@@ -164,7 +166,8 @@ def from_dict(d: dict[str, Any]) -> SimulationConfig:
                                moisture_buoyancy=bool(_get(ph, "moisture_buoyancy", True)),
                                T_ref=_get(ph, "T_ref", None),
                                scenario=str(_get(ph, "scenario", "mixing_chamber")),
-                               bubble_dtheta=float(_get(ph, "bubble_dtheta", 3.0)))
+                               bubble_dtheta=float(_get(ph, "bubble_dtheta", 3.0)),
+                               precision=str(_get(ph, "precision", "float64")))
     bd = _get(d, "boundaries", {})
     warm = _get(bd, "warm_inflow", {})
     cold = _get(bd, "cold_inflow", {})
@@ -222,9 +225,18 @@ def from_yaml(path: str) -> SimulationConfig:
 
 
 def validate(cfg: SimulationConfig) -> None:
-    g = cfg.grid
-    assert g.nx > 0 and g.ny > 0 and g.nz > 0, "grid cells must be positive"
-    assert cfg.domain.Lx > 0 and cfg.domain.Ly > 0 and cfg.domain.Lz > 0
+    import math as _m
+    g, d = cfg.grid, cfg.domain
+    _MIN = 3   # central-difference / Laplacian stencils need >= 3 cells per axis
+    assert g.nx >= _MIN and g.ny >= _MIN and g.nz >= _MIN, \
+        "grid must have >= %d cells per axis (stencil minimum); got %dx%dx%d" % (
+            _MIN, g.nx, g.ny, g.nz)
+    assert all(_m.isfinite(v) and v > 0 for v in (d.Lx, d.Ly, d.Lz)), \
+        "domain lengths must be positive and finite"
+    ncells = g.nx * g.ny * g.nz
+    assert 0 < ncells < 2_000_000_000, "number of cells out of range: %d" % ncells
+    assert cfg.physics.precision in ("float32", "float64"), \
+        "precision must be float32 or float64"
     assert 0 < cfg.time.cfl <= 1.0, "CFL must be in (0, 1]"
     assert cfg.time.dt_max > 0 and cfg.time.duration >= 0
     assert cfg.flow.advection_order in (1, 2)
@@ -236,8 +248,78 @@ def validate(cfg: SimulationConfig) -> None:
     assert cfg.boundaries.cold_inflow.T > 100, "cold inflow T unphysical"
 
 
+# ---------------------------------------------------------------------------
+# geometry / memory helpers (derived quantities; single source of truth)
+# ---------------------------------------------------------------------------
+def geometry(cfg: SimulationConfig) -> dict:
+    """Derived grid geometry.  Cell-centred convention: dx = Lx / Nx (Nx CELLS,
+    not nodes), cell_volume = dx*dy*dz, domain_volume = Lx*Ly*Lz."""
+    d, g = cfg.domain, cfg.grid
+    dx, dy, dz = d.Lx / g.nx, d.Ly / g.ny, d.Lz / g.nz
+    return {
+        "Nx": g.nx, "Ny": g.ny, "Nz": g.nz,
+        "Lx_m": d.Lx, "Ly_m": d.Ly, "Lz_m": d.Lz,
+        "dx_m": dx, "dy_m": dy, "dz_m": dz,
+        "cell_volume_m3": dx * dy * dz,
+        "domain_volume_m3": d.Lx * d.Ly * d.Lz,
+        "n_cells": g.nx * g.ny * g.nz,
+        "cubic": abs(dx - dy) < 1e-9 and abs(dy - dz) < 1e-9,
+    }
+
+
+# ~ number of persistent + temporary 3-D fields carried by the solver
+_N_FIELDS_ESTIMATE = 45
+
+
+def estimate_memory_gb(cfg: SimulationConfig, n_fields: int = _N_FIELDS_ESTIMATE,
+                       safety: float = 2.0) -> float:
+    """Rough field-memory estimate [GB] = N_cells * n_fields * bytes * safety.
+    Note: the direct pressure factorisation (splu, used only for grids <= ~40^3)
+    can add substantial fill-in beyond this; large grids use iterative CG."""
+    n = cfg.grid.nx * cfg.grid.ny * cfg.grid.nz
+    bytes_per = 4 if cfg.physics.precision == "float32" else 8
+    return n * n_fields * bytes_per * safety / 1e9
+
+
+def format_geometry(cfg: SimulationConfig) -> str:
+    gm = geometry(cfg)
+    mem = estimate_memory_gb(cfg)
+    lines = [
+        "grid       : %d x %d x %d = %d cells (%s spacing)" % (
+            gm["Nx"], gm["Ny"], gm["Nz"], gm["n_cells"],
+            "isotropic" if gm["cubic"] else "anisotropic"),
+        "domain     : %.1f x %.1f x %.1f m   V_domain = %.3e m^3" % (
+            gm["Lx_m"], gm["Ly_m"], gm["Lz_m"], gm["domain_volume_m3"]),
+        "spacing    : dx=%.3f dy=%.3f dz=%.3f m   V_cell = %.4g m^3" % (
+            gm["dx_m"], gm["dy_m"], gm["dz_m"], gm["cell_volume_m3"]),
+        "memory est.: ~%.2f GB (%s, ~%d fields, safety x%.1f)" % (
+            mem, cfg.physics.precision, _N_FIELDS_ESTIMATE, 2.0),
+        "time       : cfl=%.2f dt_max=%.3g s duration=%.1f s" % (
+            cfg.time.cfl, cfg.time.dt_max, cfg.time.duration),
+    ]
+    return "\n".join("  " + ln for ln in lines)
+
+
+# ---------------------------------------------------------------------------
+# named CPU mesh presets (see the manual)
+# ---------------------------------------------------------------------------
+PRESETS = {
+    "fast":     dict(Lx=1000.0, Ly=1000.0, Lz=1000.0, Nx=25, Ny=25, Nz=25),
+    "light":    dict(Lx=1000.0, Ly=1000.0, Lz=1000.0, Nx=40, Ny=40, Nz=40),
+    "recommended": dict(Lx=1000.0, Ly=1000.0, Lz=1000.0, Nx=50, Ny=50, Nz=50),
+    "advanced": dict(Lx=1000.0, Ly=1000.0, Lz=1000.0, Nx=100, Ny=100, Nz=100),
+    "convective-column": dict(Lx=2000.0, Ly=2000.0, Lz=5000.0, Nx=50, Ny=50, Nz=125),
+}
+
+
 def apply_overrides(cfg: SimulationConfig, *,
                    grid_resolution: int | None = None,
+                   Lx: float | None = None, Ly: float | None = None, Lz: float | None = None,
+                   Nx: int | None = None, Ny: int | None = None, Nz: int | None = None,
+                   cfl: float | None = None, dt_max: float | None = None,
+                   pressure_drop: float | None = None,
+                   pressure_gradient: float | None = None,
+                   float32: bool = False, preset: str | None = None,
                    duration: float | None = None,
                    output_interval: int | None = None,
                    output: str | None = None,
@@ -248,8 +330,16 @@ def apply_overrides(cfg: SimulationConfig, *,
                    storm_scale: bool = False,
                    method: str | None = None,
                    threads: int | None = None) -> SimulationConfig:
-    """Return a copy of cfg with CLI overrides applied."""
+    """Return a copy of cfg with CLI overrides applied.  Precedence (low->high):
+    preset -> storm_scale -> grid_resolution -> explicit Lx/Ly/Lz/Nx/Ny/Nz."""
     cfg = copy.deepcopy(cfg)
+    if preset is not None:
+        if preset not in PRESETS:
+            raise ValueError("unknown preset '%s'; choices: %s"
+                             % (preset, ", ".join(sorted(PRESETS))))
+        pv = PRESETS[preset]
+        cfg.domain.Lx, cfg.domain.Ly, cfg.domain.Lz = pv["Lx"], pv["Ly"], pv["Lz"]
+        cfg.grid.nx, cfg.grid.ny, cfg.grid.nz = pv["Nx"], pv["Ny"], pv["Nz"]
     if storm_scale:
         # km-scale deep-convection storm: stratified base state + warm-bubble
         # trigger + closed walls, two-way microphysics.  Demonstration-scale
@@ -273,6 +363,35 @@ def apply_overrides(cfg: SimulationConfig, *,
     if grid_resolution is not None:
         n = int(grid_resolution)
         cfg.grid.nx = cfg.grid.ny = cfg.grid.nz = n
+    # explicit domain/grid dimensions -- highest precedence (CLI over YAML/preset)
+    if Lx is not None:
+        cfg.domain.Lx = float(Lx)
+    if Ly is not None:
+        cfg.domain.Ly = float(Ly)
+    if Lz is not None:
+        cfg.domain.Lz = float(Lz)
+    if Nx is not None:
+        cfg.grid.nx = int(Nx)
+    if Ny is not None:
+        cfg.grid.ny = int(Ny)
+    if Nz is not None:
+        cfg.grid.nz = int(Nz)
+    if cfl is not None:
+        cfg.time.cfl = float(cfl)
+    if dt_max is not None:
+        cfg.time.dt_max = float(dt_max)
+    if float32:
+        cfg.physics.precision = "float32"
+    # pressure forcing: total drop [Pa] vs gradient [Pa/m] (mutually exclusive).
+    # Increasing Lx at fixed drop lowers the gradient -- surfaced here explicitly.
+    if pressure_drop is not None and pressure_gradient is not None:
+        raise ValueError("provide pressure_drop OR pressure_gradient, not both")
+    if pressure_drop is not None:
+        cfg.flow.p_drop = float(pressure_drop)
+        cfg.physics.pressure_gradient = None
+    if pressure_gradient is not None:
+        cfg.physics.pressure_gradient = float(pressure_gradient)
+        cfg.flow.p_drop = float(pressure_gradient) * cfg.domain.Lx
     if duration is not None:
         cfg.time.duration = float(duration)
     if output_interval is not None:
@@ -308,8 +427,12 @@ __all__ = [
     "PhysicsConfig",
     "SimulationConfig",
     "TimeConfig",
+    "PRESETS",
     "apply_overrides",
+    "estimate_memory_gb",
+    "format_geometry",
     "from_dict",
     "from_yaml",
+    "geometry",
     "validate",
 ]

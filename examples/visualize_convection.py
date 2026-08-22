@@ -62,9 +62,12 @@ def plot_convection(sim, outdir: str, streamlines: bool = False) -> list:
     im = ax.pcolormesh(X, Z, w_xz, shading="auto", cmap="RdBu_r",
                        vmin=-wmax, vmax=wmax)
     fig.colorbar(im, ax=ax, label="w [m/s]  (red = updraft)")
-    if float(np.nanmax(c_xz)) > 1e-3:
-        ax.contour(X, Z, c_xz, levels=[0.01, 0.1, 0.5, 1.0, 2.0],
-                   colors="green", linewidths=1.0)
+    cmax = float(np.nanmax(c_xz))
+    if cmax > 1e-2:
+        thr = max(0.05, 0.1 * cmax)                       # cloud edge [g/kg]
+        ax.contourf(X, Z, c_xz, levels=[thr, cmax + 1e-9],
+                    colors=["#2ca02c"], alpha=0.22)        # shaded cloud region
+        ax.contour(X, Z, c_xz, levels=[thr], colors="green", linewidths=1.2)
     spd = float(np.max(np.hypot(u_xz, w_xz)))
     if spd > 1e-6:
         if streamlines:

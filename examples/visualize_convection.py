@@ -6,9 +6,10 @@ the vertical velocity ``w`` (updraft/downdraft) in colour, the cloud field
 (``q_l + q_i``) as contours, and the ``(u, w)`` circulation as vectors; plus a
 horizontal x-y slice of ``w`` at mid-height showing the updraft cell(s).
 
-    python examples/visualize_convection.py                     # storm-scale, 400 s
-    python examples/visualize_convection.py --duration 900 --grid 20
-    python examples/visualize_convection.py --out outputs/conv  # PNGs -> outputs/conv/
+    python examples/visualize_convection.py                       # quiver arrows
+    python examples/visualize_convection.py --streamlines         # streamlines instead
+    python examples/visualize_convection.py --duration 900 --grid 20 --streamlines
+    python examples/visualize_convection.py --out outputs/conv    # PNGs -> outputs/conv/
 
 The figures are written as PNGs (headless Agg backend); the run also writes
 ``flow.nc`` which can be animated in ncview / ParaView / xarray.
@@ -33,20 +34,24 @@ from meteorological_flow.simulation import Simulation                      # noq
 
 def _centres(st):
     uc = 0.5 * (st.u[:-1, :, :] + st.u[1:, :, :])
+    vc = 0.5 * (st.v[:, :-1, :] + st.v[:, 1:, :])
     wc = 0.5 * (st.w[:, :, :-1] + st.w[:, :, 1:])
     cloud = np.asarray(st.ql) + np.asarray(st.qi)
-    return uc, wc, cloud
+    return uc, vc, wc, cloud
 
 
-def plot_convection(sim, outdir: str) -> list:
+def plot_convection(sim, outdir: str, streamlines: bool = False) -> list:
+    """Render the convection slices.  ``streamlines=True`` draws the circulation
+    as continuous streamlines (streamplot) instead of quiver arrows."""
     os.makedirs(outdir, exist_ok=True)
     g = sim.grid
     st = sim.state
-    uc, wc, cloud = _centres(st)
+    uc, vc, wc, cloud = _centres(st)
     jmid, kmid = g.ny // 2, g.nz // 2
+    tag = "stream" if streamlines else "vectors"
     files = []
 
-    # --- vertical x-z slice: w (colour) + cloud (contours) + (u,w) vectors ---
+    # --- vertical x-z slice: w (colour) + cloud (contours) + circulation ---
     w_xz = wc[:, jmid, :]
     u_xz = uc[:, jmid, :]
     c_xz = cloud[:, jmid, :] * 1000.0                      # g/kg
@@ -60,28 +65,38 @@ def plot_convection(sim, outdir: str) -> list:
     if float(np.nanmax(c_xz)) > 1e-3:
         ax.contour(X, Z, c_xz, levels=[0.01, 0.1, 0.5, 1.0, 2.0],
                    colors="green", linewidths=1.0)
-    sx = max(1, g.nx // 16)
-    sz = max(1, g.nz // 16)
     spd = float(np.max(np.hypot(u_xz, w_xz)))
     if spd > 1e-6:
-        ax.quiver(X[::sx, ::sz], Z[::sx, ::sz], u_xz[::sx, ::sz], w_xz[::sx, ::sz],
-                  color="k", alpha=0.6, scale=max(spd * 20.0, 1e-6))
-    ax.set_title("Convection (x-z, y=mid, t=%.0f s): w + cloud + (u,w)" % sim.t)
+        if streamlines:
+            # streamplot needs 1-D increasing x,z and (nz,nx) velocity arrays
+            ax.streamplot(g.xc, g.zc, u_xz.T, w_xz.T, color="k",
+                          density=1.4, linewidth=0.7, arrowsize=0.9)
+        else:
+            sx, sz = max(1, g.nx // 16), max(1, g.nz // 16)
+            ax.quiver(X[::sx, ::sz], Z[::sx, ::sz], u_xz[::sx, ::sz], w_xz[::sx, ::sz],
+                      color="k", alpha=0.6, scale=max(spd * 20.0, 1e-6))
+    ax.set_title("Convection (x-z, y=mid, t=%.0f s): w + cloud + %s"
+                 % (sim.t, "streamlines" if streamlines else "(u,w)"))
     ax.set_xlabel("x [m]"); ax.set_ylabel("z [m]")
-    p = os.path.join(outdir, "convection_xz.png")
+    p = os.path.join(outdir, "convection_xz_%s.png" % tag)
     fig.savefig(p, dpi=120, bbox_inches="tight"); plt.close(fig); files.append(p)
 
-    # --- horizontal x-y slice of w at mid-height ---
+    # --- horizontal x-y slice of w at mid-height (+ optional streamlines) ---
     w_xy = wc[:, :, kmid]
+    u_xy, v_xy = uc[:, :, kmid], vc[:, :, kmid]
     Xh, Yh = np.meshgrid(g.xc, g.yc, indexing="ij")
     wmax_h = max(float(np.max(np.abs(w_xy))), 1e-6)
     fig, ax = plt.subplots(figsize=(6, 5))
     im = ax.pcolormesh(Xh, Yh, w_xy, shading="auto", cmap="RdBu_r",
                        vmin=-wmax_h, vmax=wmax_h)
     fig.colorbar(im, ax=ax, label="w [m/s]")
-    ax.set_title("Updraft cells (x-y, z=%.0f m, t=%.0f s)" % (g.zc[kmid], sim.t))
+    if streamlines and float(np.max(np.hypot(u_xy, v_xy))) > 1e-6:
+        ax.streamplot(g.xc, g.yc, u_xy.T, v_xy.T, color="k",
+                      density=1.4, linewidth=0.7, arrowsize=0.9)
+    ax.set_title("Horizontal flow (x-y, z=%.0f m, t=%.0f s)%s"
+                 % (g.zc[kmid], sim.t, " + streamlines" if streamlines else ""))
     ax.set_xlabel("x [m]"); ax.set_ylabel("y [m]")
-    p = os.path.join(outdir, "convection_xy.png")
+    p = os.path.join(outdir, "convection_xy_%s.png" % tag)
     fig.savefig(p, dpi=120, bbox_inches="tight"); plt.close(fig); files.append(p)
     return files
 
@@ -91,6 +106,9 @@ def main(argv=None) -> int:
     ap.add_argument("--duration", type=float, default=400.0)
     ap.add_argument("--grid", type=int, default=16, help="nx=ny (nz scaled for the column)")
     ap.add_argument("--out", default="outputs/convection_viz")
+    ap.add_argument("--streamlines", action="store_true",
+                    help="draw the circulation as streamlines (streamplot) instead "
+                         "of quiver arrows")
     ap.add_argument("--no-storm", action="store_true",
                     help="use the shallow mixing chamber instead of the storm scenario")
     args = ap.parse_args(argv)
@@ -121,7 +139,7 @@ def main(argv=None) -> int:
         float(np.max(np.abs(0.5 * (st.w[:, :, :-1] + st.w[:, :, 1:])))),
         float(np.max(np.asarray(st.ql) + np.asarray(st.qi))),
         float(np.max(st.qr))))
-    files = plot_convection(sim, args.out)
+    files = plot_convection(sim, args.out, streamlines=args.streamlines)
     print("Figures written:")
     for f in files:
         print("  " + f)

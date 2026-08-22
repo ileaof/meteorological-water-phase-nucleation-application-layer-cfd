@@ -317,6 +317,7 @@ def apply_overrides(cfg: SimulationConfig, *,
                    Lx: float | None = None, Ly: float | None = None, Lz: float | None = None,
                    Nx: int | None = None, Ny: int | None = None, Nz: int | None = None,
                    cfl: float | None = None, dt_max: float | None = None,
+                   sgs: float | None = None,
                    pressure_drop: float | None = None,
                    pressure_gradient: float | None = None,
                    float32: bool = False, preset: str | None = None,
@@ -380,6 +381,8 @@ def apply_overrides(cfg: SimulationConfig, *,
         cfg.time.cfl = float(cfl)
     if dt_max is not None:
         cfg.time.dt_max = float(dt_max)
+    if sgs is not None:
+        cfg.flow.nu = cfg.flow.kappa = float(sgs)   # subgrid eddy viscosity/diffusivity
     if float32:
         cfg.physics.precision = "float32"
     # pressure forcing: total drop [Pa] vs gradient [Pa/m] (mutually exclusive).

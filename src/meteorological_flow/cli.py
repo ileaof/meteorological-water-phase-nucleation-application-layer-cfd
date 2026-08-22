@@ -39,6 +39,9 @@ def build_argparser() -> argparse.ArgumentParser:
     p.add_argument("--cfl", type=float, default=None, help="CFL target (0,1]")
     p.add_argument("--dt-max", type=float, default=None, dest="dt_max",
                    help="maximum timestep [s]")
+    p.add_argument("--sgs", type=float, default=None,
+                   help="subgrid eddy viscosity=diffusivity nu=kappa [m^2/s] "
+                        "(raise to damp grid-scale 2-delta noise; storm default ~80)")
     grp = p.add_mutually_exclusive_group()
     grp.add_argument("--pressure-drop", type=float, default=None, dest="pressure_drop",
                      help="total pressure drop across x [Pa]")
@@ -102,7 +105,8 @@ def main(argv=None) -> int:
         diagnostic_only=args.diagnostic_only, two_way=args.two_way_coupling,
         storm_scale=args.storm_scale, preset=args.preset,
         Lx=args.Lx, Ly=args.Ly, Lz=args.Lz, Nx=args.Nx, Ny=args.Ny, Nz=args.Nz,
-        cfl=args.cfl, dt_max=args.dt_max, pressure_drop=args.pressure_drop,
+        cfl=args.cfl, dt_max=args.dt_max, sgs=args.sgs,
+        pressure_drop=args.pressure_drop,
         pressure_gradient=args.pressure_gradient, float32=args.float32,
         method=args.method, threads=args.threads)
 

@@ -349,7 +349,7 @@ the <code>het_contact_angle</code> module and the two SHA-256-guarded reference 
 
 <h3>3.2 Command line</h3>
 <pre><code># one state, both phases, supersaturated, with dynamics + a JSON dump (run from the repo root):
-python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --Vcell 1e6 --json out_met_nucleation/cli_report.json
+python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --cell-volume 1e6 --json out_met_nucleation/cli_report.json
 
 # prove the core is untouched and the met-layer self-checks pass:
 python met_h2o_nucleation.py --validate</code></pre>
@@ -771,7 +771,7 @@ same values; only the layout differs.</p>
 <tr><td><code>graup</code></td><td>0–1</td><td>graupel (riming/accretion) favourability; needs supercooled liquid + ice together</td></tr>
 <tr><td><code>hail</code></td><td>0–1</td><td>hail (deep wet growth) favourability; the most demanding. <strong>Never</strong> set high solely because <code>I</code> is high</td></tr>
 <tr><td><code>class</code></td><td>—</td><td>diagnostic class: <code>mixed_phase</code>, <code>condensation_favorable</code>, <code>subsaturated</code>, …</td></tr>
-<tr><td><code>exp_events</code></td><td>count</td><td><code>expected_events = I · dt · V_cell</code>; <code>undetermined</code> when <code>--dt</code>/<code>--Vcell</code> absent</td></tr>
+<tr><td><code>exp_events</code></td><td>count</td><td><code>expected_events = I · dt · V_cell</code>; <code>undetermined</code> when <code>--dt</code>/<code>--cell-volume</code> absent</td></tr>
 </tbody></table></div>
 <p class="note">The four favourability indices are <strong>diagnostic flags, not forecasts</strong>: they combine
 nucleation tendency with whatever dynamics/microphysics were supplied and carry a confidence + caveat. When
@@ -779,7 +779,7 @@ dynamics are absent they reflect thermodynamic favourability only (LOW confidenc
 
 <p class="lead-in">Case 1 — both phases, supersaturated, with dynamics + expected events.</p>
 <p>The canonical reference point: 260 K, 700 hPa, 110 % RH over water, a modest updraft, supercooled LWC/IWC, and a timestep × cell volume so <code>expected_events</code> is determined.</p>
-<pre><code>python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --Vcell 1e6 --summary</code></pre>
+<pre><code>python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --cell-volume 1e6 --summary</code></pre>
 <div class="term-bar">terminal</div>
 <div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class       | exp_events</span>
   liquid | <span class="ok">ok</span>     | 1.10 | 1.25 | 74.33 | 5.11e-06 | 53.10  | liquid   | 0.600 | 0.607 | 0.555 | 0.386 | mixed_phase | 7.61e+60
@@ -790,7 +790,7 @@ dynamics are absent they reflect thermodynamic favourability only (LOW confidenc
 growth is (unmodelled). Class is <code>mixed_phase</code> (supersaturated wrt both phases, T&lt;0 °C).</p>
 
 <p class="lead-in">Case 2 — auto phase mode (dominant phase reported).</p>
-<p>Same state, but <code>--phase-mode auto</code>: both admissible phases are computed and the kinetically dominant one is reported. Without <code>--dt/--Vcell</code>, <code>expected_events</code> is <code>"undetermined"</code>.</p>
+<p>Same state, but <code>--phase-mode auto</code>: both admissible phases are computed and the kinetically dominant one is reported. Without <code>--dt/--cell-volume</code>, <code>expected_events</code> is <code>"undetermined"</code>.</p>
 <pre><code>python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode auto --summary</code></pre>
 <div class="term-bar">terminal</div>
 <div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class       | exp_events</span>
@@ -861,7 +861,7 @@ the mode to use when p_v comes from a forecast field rather than RH.</p>
 
 <p class="lead-in">Case 8 — warm regime (T = 285 K, RH = 102 %).</p>
 <p>Above freezing: liquid is slightly supersaturated, ice is <em>sub</em> saturated (S_i = 0.91). The diagnostic class flips to <code>condensation_favorable</code> and the cold-type indices collapse.</p>
-<pre><code>python met_h2o_nucleation.py --T 285 --P 90000 --RH 102 --phase-mode both --w 1.0 --LWC 3e-4 --dt 60 --Vcell 1e6 --summary</code></pre>
+<pre><code>python met_h2o_nucleation.py --T 285 --P 90000 --RH 102 --phase-mode both --w 1.0 --LWC 3e-4 --dt 60 --cell-volume 1e6 --summary</code></pre>
 <div class="term-bar">terminal</div>
 <div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class                  | exp_events</span>
   liquid | <span class="ok">ok</span>     | 1.02 | 0.91 | 79.62 | 5.11e-06 | 53.06  | liquid   | 0.400 | 0.333 | 0.300 | 0.325 | condensation_favorable | 6.96e+60
@@ -895,7 +895,7 @@ supersaturated parcel: mixing temperature and vapour pressure linearly (the Roge
 and scanning the warm-air mass fraction <em>f</em>, the supersaturation peaks at <em>f</em> = 0.50 → T = 280.75 K,
 p_v = 1203.69 Pa, <strong>S_water = 1.153</strong>. That mixed state <em>is</em> the frontal cloud;
 <code>example_met_frontal_collision.py</code> builds it and diagnoses it.</p>
-<pre><code>python met_h2o_nucleation.py --T 280.75 --P 90000 --p-v 1203.69 --phase-mode both --w 1.5 --LWC 5e-4 --dt 60 --Vcell 1e6 --summary</code></pre>
+<pre><code>python met_h2o_nucleation.py --T 280.75 --P 90000 --p-v 1203.69 --phase-mode both --w 1.5 --LWC 5e-4 --dt 60 --cell-volume 1e6 --summary</code></pre>
 <div class="term-bar">terminal</div>
 <div class="term"><span class="dim">  phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | theta_deg | dominant | rain  | snow  | graup | hail  | class     | theta_model   | exp_events</span>
   liquid | <span class="ok">ok</span>     | 1.15 | 1.07 | 78.71 | 5.11e-06 | 53.05  | 90.04     | liquid   | 0.641 | 0.452 | 0.431 | 0.375 | warm_rain | ferreira_eq17 | 6.79e+60

@@ -179,7 +179,7 @@ are all bundled. A successful `--validate` run ends with `SELF-CHECKS PASS`.
 
 ```bash
 # one state, both phases, supersaturated, with dynamics + a JSON dump:
-python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --Vcell 1e6 --json outputs/cli_report.json
+python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --cell-volume 1e6 --json outputs/cli_report.json
 
 # prove the core is untouched and the met-layer self-checks pass:
 python met_h2o_nucleation.py --validate
@@ -475,7 +475,7 @@ python met_h2o_nucleation.py [--validate]
         [--mode homogeneous|heterogeneous]
         [--theta DEG] [--r-ref m] [--gradT K/m]
         [--w m/s] [--LWC kg/m3] [--IWC kg/m3]
-        [--dt s] [--Vcell m3]
+        [--dt s] [--cell-volume m3]
         [--outdir DIR] [--json PATH] [--summary]
 ```
 
@@ -518,7 +518,7 @@ larger I · `rain/snow/graup/hail` 0–1 favourability (flags, **not** forecasts
 **Case 1 — both phases, supersaturated, with dynamics + expected events.**
 
 ```bash
-python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --Vcell 1e6 --summary
+python met_h2o_nucleation.py --T 260 --P 70000 --RH 110 --phase-mode both --w 2.0 --LWC 5e-4 --IWC 1e-4 --dt 60 --cell-volume 1e6 --summary
 ```
 ```
   phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class       | exp_events
@@ -613,7 +613,7 @@ python met_h2o_nucleation.py --T 260 --P 70000 --p-v 500 --phase-mode both --sum
 **Case 8 — warm regime (T = 285 K, RH = 102 %).**
 
 ```bash
-python met_h2o_nucleation.py --T 285 --P 90000 --RH 102 --phase-mode both --w 1.0 --LWC 3e-4 --dt 60 --Vcell 1e6 --summary
+python met_h2o_nucleation.py --T 285 --P 90000 --RH 102 --phase-mode both --w 1.0 --LWC 3e-4 --dt 60 --cell-volume 1e6 --summary
 ```
 ```
   phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | dominant | rain  | snow  | graup | hail  | class                  | exp_events
@@ -651,7 +651,7 @@ T = 280.75 K, p_v = 1203.69 Pa, **S_water = 1.153**. That mixed state *is* the
 frontal cloud.
 
 ```bash
-python met_h2o_nucleation.py --T 280.75 --P 90000 --p-v 1203.69 --phase-mode both --w 1.5 --LWC 5e-4 --dt 60 --Vcell 1e6 --summary
+python met_h2o_nucleation.py --T 280.75 --P 90000 --p-v 1203.69 --phase-mode both --w 1.5 --LWC 5e-4 --dt 60 --cell-volume 1e6 --summary
 ```
 ```
   phase  | status | S_w  | S_i  | gradT | rC2nd    | log10I | theta_deg | dominant | rain  | snow  | graup | hail  | class     | theta_model   | exp_events

@@ -72,7 +72,19 @@ def write_netcdf(snapshots: list, path: str, grid: Grid, attrs: dict) -> str:
         coords={"time": times, "z": grid.zc, "y": grid.yc, "x": grid.xc},
         attrs=attrs,
     )
-    ds.to_netcdf(path, engine="scipy", format="NETCDF3_CLASSIC")
+    # 64-bit offset format lifts the 2 GB NetCDF3-CLASSIC limit (int32 offsets),
+    # which a large grid x many snapshots easily exceeds (e.g. 64^3 x ~50 slices).
+    # Guard the write so a NetCDF failure never discards the completed run's
+    # summary.json / history.csv (the physics is already done at this point).
+    n_bytes = sum(v[1].nbytes for v in data.values())
+    try:
+        ds.to_netcdf(path, engine="scipy", format="NETCDF3_64BIT")
+    except Exception as exc:                                  # noqa: BLE001
+        import warnings
+        warnings.warn(
+            "flow.nc not written (%s). Estimated size ~%.2f GB. For large grids "
+            "increase --output-interval (fewer time slices) or reduce N."
+            % (exc, n_bytes / 1e9), RuntimeWarning)
     return path
 
 

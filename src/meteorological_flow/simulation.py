@@ -395,9 +395,6 @@ class Simulation:
         outdir = cfg.output.outdir
         os.makedirs(outdir, exist_ok=True)
         attrs = self._global_attrs()
-        # NetCDF
-        if "netcdf" in cfg.output.format and self.snapshots:
-            fio.write_netcdf(self.snapshots, os.path.join(outdir, "flow.nc"), self.grid, attrs)
         # CSV history
         if "csv" in cfg.output.format:
             fio.write_csv(self.history, os.path.join(outdir, "history.csv"))
@@ -461,6 +458,10 @@ class Simulation:
             report["surface_precip_mm"] = prec
         if "json" in cfg.output.format:
             fio.write_json(report, os.path.join(outdir, "summary.json"))
+        # NetCDF last: it can be large/slow at high resolution, and its write is
+        # guarded (io.write_netcdf), so the summary/history above always survive.
+        if "netcdf" in cfg.output.format and self.snapshots:
+            fio.write_netcdf(self.snapshots, os.path.join(outdir, "flow.nc"), self.grid, attrs)
         return report
 
     def _global_attrs(self) -> dict:

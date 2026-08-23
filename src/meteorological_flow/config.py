@@ -334,6 +334,7 @@ def apply_overrides(cfg: SimulationConfig, *,
                    two_way: bool = False,
                    storm_scale: bool = False,
                    dynamics: str | None = None,
+                   tecplot: bool = False,
                    method: str | None = None,
                    threads: int | None = None) -> SimulationConfig:
     """Return a copy of cfg with CLI overrides applied.  Precedence (low->high):
@@ -414,6 +415,8 @@ def apply_overrides(cfg: SimulationConfig, *,
         cfg.nucleation.stage = "hydrometeor"   # full two-way microphysics coupling
     if dynamics is not None:
         cfg.physics.dynamics = str(dynamics)
+    if tecplot and "tecplot" not in cfg.output.format:
+        cfg.output.format = list(cfg.output.format) + ["tecplot"]
     if method is not None:
         cfg.nucleation.method = method
     # threads stored on the lookup config for the table build

@@ -1200,8 +1200,20 @@ python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml -
 # km-scale DEEP-CONVECTION STORM that actually rains (~1.9 mm domain-mean at 1200 s):
 python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml --duration 1200 --storm-scale --output outputs/flow_storm --threads 8
 
+# ALSO WRITE TECPLOT 360 (flow.dat) for Tecplot / py2tec / ParaView, next to flow.nc:
+python -m meteorological_flow.cli --storm-scale --dynamics anelastic --Nx 24 --Ny 24 --Nz 45 --Lz 18000 --duration 600 --tecplot --output outputs/storm_anelastic
+
 # after `pip install -e .` the console script is available:
 meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 40 --duration 120 --two-way-coupling</code></pre>
+<p class="note"><strong>Tecplot 360 output</strong> (<code>--tecplot</code>): writes
+<code>outputs/&lt;run&gt;/flow.dat</code> &mdash; a Tecplot 360 ASCII file with one structured
+<code>ORDERED</code>/<code>DATAPACKING=POINT</code> zone per snapshot, all zones sharing <code>STRANDID=1</code>
+with a per-zone <code>SOLUTIONTIME</code> so Tecplot plays the run as an animation. Variables (SI units in
+brackets): <code>X,Y,Z, U,V,W, Pressure, Temperature, q_v, q_cloud (=q_l+q_i), S_w</code>, node-ordered with the
+I&nbsp;(x) index varying fastest. The dialect matches <code>py2tec</code> and is read by Tecplot&nbsp;360 and
+ParaView. It is written alongside <code>flow.nc</code> and its write is guarded, so a failure never discards
+<code>summary.json</code>/<code>history.csv</code>. ASCII is large at high resolution &mdash; pair it with a coarse
+<code>--output-interval</code> (fewer time slices) for big grids.</p>
 
 <h3>25.2 Flags</h3>
 <div class="tablewrap"><table>
@@ -1224,6 +1236,7 @@ meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resoluti
 <tr><td><code>--two-way-coupling</code> / <code>--hydrometeors</code></td><td>stage = hydrometeor (two-way microphysics: growth + latent heat + sedimentation)</td></tr>
 <tr><td><code>--storm-scale</code> / <code>--deep-convection</code></td><td>km-scale deep-convection storm: stratified sounding + warm-bubble trigger + two-way microphysics (demonstration; Boussinesq-stretched)</td></tr>
 <tr><td><code>--dynamics boussinesq|anelastic</code></td><td>dynamical core. <code>boussinesq</code> (default, constant density &mdash; validated test mode); <code>anelastic</code> uses the height-dependent reference density &rho;<sub>0</sub>(z) with &nabla;&middot;(&rho;<sub>0</sub><strong>u</strong>)=0, capturing deep-column mass expansion (updrafts amplifying with height). Milestone&nbsp;3.</td></tr>
+<tr><td><code>--tecplot</code></td><td>also write <code>flow.dat</code>, a Tecplot&nbsp;360 ASCII file (structured <code>ORDERED</code>/<code>DATAPACKING=POINT</code> zones, one per snapshot, grouped by <code>STRANDID</code>+<code>SOLUTIONTIME</code> for time animation), alongside the NetCDF. Readable by Tecplot&nbsp;360, py2tec and ParaView.</td></tr>
 <tr><td><code>--no-microphysics</code></td><td>stage = none (pure flow)</td></tr>
 <tr><td><code>--diagnostic-only</code></td><td>alias for one-way</td></tr>
 <tr><td><code>--method direct|lookup</code></td><td>kernel evaluation method (lookup required at scale)</td></tr>
@@ -1527,7 +1540,8 @@ the &ldquo;idealised demonstration&rdquo; caveats are lifted.</p>
 <tr><td>M1 &mdash; audit</td><td>done</td><td>solver audit vs deep-convection requirements</td></tr>
 <tr><td>M2 &mdash; reference atmosphere</td><td>done</td><td>hydrostatic base state, Weisman&ndash;Klemp sounding, CAPE/CIN/LCL/LFC/EL diagnostics, sounding I/O (<code>examples/sounding_diagnostics.py</code>)</td></tr>
 <tr><td>M3 &mdash; anelastic core</td><td>done</td><td><code>--dynamics anelastic</code>: &rho;<sub>0</sub>(z) reference density, &nabla;&middot;(&rho;<sub>0</sub><strong>u</strong>)=0, deep-column mass expansion (<code>examples/anelastic_vs_boussinesq.py</code>)</td></tr>
-<tr><td>M4&ndash;M9</td><td>planned</td><td>mesh/CFL/conservation, conservative microphysics + latent heat, nucleation-lookup coupling, sedimentation/surface precip, convergence study, observational comparison</td></tr>
+<tr><td>M4 &mdash; conservation</td><td>done</td><td>the stratified reference is now an <strong>exact discrete equilibrium</strong> (perturbation-only diffusion + perturbation-preserving z-boundaries, so the limiters do not prop up a phantom circulation); conservation report (mass-continuity residual + complete water/energy budget). Vertical grid stretching and the formal convergence study fold into M8.</td></tr>
+<tr><td>M5&ndash;M9</td><td>planned</td><td>conservative microphysics + latent heat, nucleation-lookup coupling, sedimentation/surface precip, convergence study, observational comparison</td></tr>
 </tbody></table>
 <p class="lead-in">The anelastic core (M3) reuses the constant-coefficient Poisson operator by writing the velocity
 correction as <code>u = u* &minus; (&Delta;t/&rho;<sub>0,face</sub>)&nabla;p&prime;</code>, so the face density cancels the operator
@@ -1544,7 +1558,11 @@ python examples/anelastic_vs_boussinesq.py --N 16 --Nz 40 --duration 180
 
 # an anelastic storm run straight from the CLI:
 python -m meteorological_flow.cli --storm-scale --dynamics anelastic \
-    --Nx 24 --Ny 24 --Nz 45 --Lz 18000 --duration 600 --output outputs/storm_anelastic --threads 8</code></pre>
+    --Nx 24 --Ny 24 --Nz 45 --Lz 18000 --duration 600 --output outputs/storm_anelastic --threads 8
+
+# ... the same run, also exporting Tecplot 360 (flow.dat) for Tecplot/ParaView:
+python -m meteorological_flow.cli --storm-scale --dynamics anelastic \
+    --Nx 24 --Ny 24 --Nz 45 --Lz 18000 --duration 600 --tecplot --output outputs/storm_anelastic</code></pre>
 <p class="note">Physical signature (dry-bubble comparison): the anelastic updraft ratio <em>w</em><sub>anel</sub>/<em>w</em><sub>bouss</sub>
 rises with height and the plume penetrates ~1 km deeper, following the &rho;<sub>0</sub>(surface)/&rho;<sub>0</sub>(top) &asymp; 3.4&times;
 mass-expansion scale &mdash; the effect the constant-density core structurally misses.</p>

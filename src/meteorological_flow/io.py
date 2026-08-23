@@ -88,6 +88,69 @@ def write_netcdf(snapshots: list, path: str, grid: Grid, attrs: dict) -> str:
     return path
 
 
+# Tecplot 360 ASCII export -------------------------------------------------
+# Matches the CFDPYGPU dialect (visualization/tecplot_writer.py): a structured
+# ORDERED zone with DATAPACKING=POINT, one node record per line, STRANDID +
+# SOLUTIONTIME for time animation, and Fortran-order flattening so the I (x)
+# index varies fastest, then J (y), then K (z).  Variable names carry their SI
+# unit in brackets (py2tec / Tecplot 360 accept quoted names with brackets).
+#
+# The meteorological variable set (adapted from the CFDPYGPU X,Y,Z,U,V,W,
+# Pressure,Temperature,Alpha core): the condensate mixing ratio q_cloud plays
+# the role of the VOF "Alpha" phase fraction.
+_TECPLOT_VARS = [
+    "X [m]", "Y [m]", "Z [m]",
+    "U [m/s]", "V [m/s]", "W [m/s]",
+    "Pressure [Pa]", "Temperature [K]",
+    "q_v [kg/kg]", "q_cloud [kg/kg]", "S_w [-]",
+]
+
+
+def _tecplot_columns(grid: Grid, snap: dict, Xf, Yf, Zf):
+    """Fortran-flattened node columns for one snapshot (order matches _TECPLOT_VARS)."""
+    r = lambda a: np.asarray(a).ravel(order="F")
+    qcloud = np.asarray(snap["q_l"]) + np.asarray(snap["q_i"])
+    return np.column_stack([
+        Xf, Yf, Zf,
+        r(snap["u"]), r(snap["v"]), r(snap["w"]),
+        r(snap["P"]), r(snap["T"]),
+        r(snap["q_v"]), r(qcloud), r(snap["S_w"]),
+    ])
+
+
+def write_tecplot(snapshots: list, path: str, grid: Grid, attrs: dict | None = None,
+                  title: str = "meteorological_flow") -> str:
+    """Write a Tecplot 360 ASCII ``.dat`` (one ORDERED/POINT zone per snapshot).
+
+    Zones share ``STRANDID=1`` and carry ``SOLUTIONTIME`` so Tecplot 360 treats
+    the file as a time sequence (Play animates the storm).  Matches the CFDPYGPU
+    ``TecplotExporter`` dialect; readable by py2tec / ParaView (Tecplot reader).
+    """
+    if not snapshots:
+        return path
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    # cell-centre mesh, Fortran-flattened (I=x fastest, then J=y, then K=z)
+    Xg, Yg, Zg = np.meshgrid(grid.xc, grid.yc, grid.zc, indexing="ij")
+    Xf, Yf, Zf = (a.ravel(order="F") for a in (Xg, Yg, Zg))
+    dims = "I=%d J=%d K=%d" % (grid.nx, grid.ny, grid.nz)
+    # guard the write so a failure never discards the run's summary/history
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write('TITLE = "%s"\n' % title)
+            fh.write("VARIABLES = " + ", ".join('"%s"' % v for v in _TECPLOT_VARS) + "\n")
+            for s in snapshots:
+                t = float(s["time"])
+                fh.write('ZONE T="t=%.6f" ZONETYPE=ORDERED %s '
+                         'DATAPACKING=POINT STRANDID=1 SOLUTIONTIME=%.6f\n'
+                         % (t, dims, t))
+                np.savetxt(fh, _tecplot_columns(grid, s, Xf, Yf, Zf), fmt="%.6e")
+                fh.write("\n")
+    except Exception as exc:                                  # noqa: BLE001
+        import warnings
+        warnings.warn("flow.dat (Tecplot) not written (%s)." % exc, RuntimeWarning)
+    return path
+
+
 def write_json(obj: dict, path: str) -> str:
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
@@ -146,4 +209,5 @@ __all__ = [
     "write_json",
     "write_netcdf",
     "write_restart",
+    "write_tecplot",
 ]

@@ -78,6 +78,9 @@ def build_argparser() -> argparse.ArgumentParser:
                    help="dynamical core: boussinesq (constant density, test mode) or "
                         "anelastic (rho0(z) reference density, div(rho0 u)=0 -- the "
                         "deep-convection core that captures updraft mass expansion)")
+    p.add_argument("--tecplot", action="store_true",
+                   help="also write Tecplot 360 ASCII flow.dat (ORDERED/POINT zones, "
+                        "STRANDID time animation) alongside the NetCDF output")
     p.add_argument("--method", choices=("lookup", "direct"), default=None,
                    help="nucleation evaluation method")
     p.add_argument("--restart", default=None, help="restart from .npz checkpoint")
@@ -112,7 +115,8 @@ def main(argv=None) -> int:
         cfl=args.cfl, dt_max=args.dt_max, sgs=args.sgs,
         pressure_drop=args.pressure_drop,
         pressure_gradient=args.pressure_gradient, float32=args.float32,
-        dynamics=args.dynamics, method=args.method, threads=args.threads)
+        dynamics=args.dynamics, tecplot=args.tecplot,
+        method=args.method, threads=args.threads)
 
     # geometry + memory report (always shown so the run records its geometry)
     print("=== meteorological_flow geometry ===")

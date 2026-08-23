@@ -957,9 +957,21 @@ python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml -
 # km-scale DEEP-CONVECTION STORM that actually rains (~1.9 mm domain-mean at 1200 s):
 python -m meteorological_flow.cli --config configs/cold_dry_vs_warm_moist.yaml --duration 1200 --storm-scale --output outputs/flow_storm --threads 8
 
+# ALSO WRITE TECPLOT 360 (flow.dat) for Tecplot / py2tec / ParaView, next to flow.nc:
+python -m meteorological_flow.cli --storm-scale --dynamics anelastic --Nx 24 --Ny 24 --Nz 45 --Lz 18000 --duration 600 --tecplot --output outputs/storm_anelastic
+
 # after `pip install -e .` the console script is available:
 meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resolution 40 --duration 120 --two-way-coupling
 ```
+
+> **Tecplot 360 output** (`--tecplot`): writes `outputs/<run>/flow.dat` — a Tecplot 360
+> ASCII file with one structured `ORDERED`/`DATAPACKING=POINT` zone per snapshot, all zones
+> sharing `STRANDID=1` with a per-zone `SOLUTIONTIME` so Tecplot plays the run as an animation.
+> Variables (SI units in brackets): `X,Y,Z, U,V,W, Pressure, Temperature, q_v, q_cloud (=q_l+q_i),
+> S_w`, node-ordered with the I (x) index varying fastest. The dialect matches `py2tec` and is read
+> by Tecplot 360 and ParaView; it is written alongside `flow.nc` (its write is guarded, so a failure
+> never discards `summary.json`/`history.csv`). ASCII is large at high resolution — pair it with a
+> coarse `--output-interval` for big grids.
 
 ### 25.2 Flags
 
@@ -982,6 +994,7 @@ meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resoluti
 | `--two-way-coupling` / `--hydrometeors` | stage = hydrometeor (two-way microphysics: growth + latent heat + sedimentation) |
 | `--storm-scale` / `--deep-convection` | km-scale deep-convection storm: stratified sounding + warm-bubble trigger + two-way microphysics (demonstration; Boussinesq-stretched) |
 | `--dynamics boussinesq\|anelastic` | dynamical core. `boussinesq` (default, constant density — validated test mode); `anelastic` uses ρ₀(z) with ∇·(ρ₀**u**)=0, capturing deep-column mass expansion (updrafts amplifying with height). Milestone 3. |
+| `--tecplot` | also write `flow.dat`, a Tecplot 360 ASCII file (`ORDERED`/`DATAPACKING=POINT` zones, one per snapshot, grouped by `STRANDID`+`SOLUTIONTIME` for time animation), alongside the NetCDF. Readable by Tecplot 360, py2tec, ParaView. |
 | `--no-microphysics` | stage = none (pure flow) |
 | `--diagnostic-only` | alias for one-way |
 | `--method direct\|lookup` | kernel evaluation method (lookup required at scale) |
@@ -1345,7 +1358,8 @@ the "idealised demonstration" caveats are lifted.
 | M1 — audit | done | solver audit vs deep-convection requirements |
 | M2 — reference atmosphere | done | hydrostatic base state, Weisman–Klemp sounding, CAPE/CIN/LCL/LFC/EL diagnostics, sounding I/O (`examples/sounding_diagnostics.py`) |
 | M3 — anelastic core | done | `--dynamics anelastic`: ρ₀(z) reference density, ∇·(ρ₀**u**)=0, deep-column mass expansion (`examples/anelastic_vs_boussinesq.py`) |
-| M4–M9 | planned | mesh/CFL/conservation, conservative microphysics + latent heat, nucleation-lookup coupling, sedimentation/surface precip, convergence study, observational comparison |
+| M4 — conservation | done | stratified reference is now an **exact discrete equilibrium** (perturbation-only diffusion + perturbation-preserving z-boundaries — the limiters don't prop up a phantom circulation); conservation report (mass-continuity residual + complete water/energy budget). Grid stretching + formal convergence fold into M8. |
+| M5–M9 | planned | conservative microphysics + latent heat, nucleation-lookup coupling, sedimentation/surface precip, convergence study, observational comparison |
 
 The **anelastic core** (M3) reuses the constant-coefficient Poisson operator by
 writing the velocity correction as `u = u* − (Δt/ρ₀,face)∇p′`, so the face
@@ -1366,6 +1380,10 @@ python examples/anelastic_vs_boussinesq.py --N 16 --Nz 40 --duration 180
 # an anelastic storm run straight from the CLI:
 python -m meteorological_flow.cli --storm-scale --dynamics anelastic \
     --Nx 24 --Ny 24 --Nz 45 --Lz 18000 --duration 600 --output outputs/storm_anelastic --threads 8
+
+# ... the same run, also exporting Tecplot 360 (flow.dat) for Tecplot/ParaView:
+python -m meteorological_flow.cli --storm-scale --dynamics anelastic \
+    --Nx 24 --Ny 24 --Nz 45 --Lz 18000 --duration 600 --tecplot --output outputs/storm_anelastic
 ```
 
 Physical signature (dry-bubble comparison): the anelastic updraft ratio

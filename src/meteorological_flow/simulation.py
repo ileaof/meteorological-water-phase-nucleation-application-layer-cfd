@@ -170,6 +170,23 @@ class Simulation:
         # the two inflows (see boundary_conditions), so mean(div)=0 and the
         # projected velocity is divergence-free -> monotone scalar advection.
         self.pressure = PressureSolver(self.grid, method=_pressure_method(self.grid))
+        # dynamical core: Boussinesq (constant rho0, test mode) vs anelastic
+        # (rho0(z) reference density, div(rho0 u)=0 -> deep-convection mass
+        # expansion).  Anelastic needs a stratified reference density profile;
+        # use the base state's rho0(z), or build a default hydrostatic one.
+        self.dynamics = getattr(cfg.physics, "dynamics", "boussinesq")
+        self.rho0_c = None
+        self.rho0_wface = None
+        if self.dynamics == "anelastic":
+            if self.base is not None:
+                rho0_prof = np.asarray(self.base.rho0, dtype=float)
+            else:
+                from .base_state import build_base_state
+                rho0_prof = np.asarray(build_base_state(self.grid).rho0, dtype=float)
+            self.rho0_c = rho0_prof                                   # (nz,) cell centres
+            # rho0 on the z-faces (nz+1); np.interp clamps to the edge values
+            # beyond the cell-centre range (constant extrapolation at ground/top).
+            self.rho0_wface = np.interp(self.grid.zf, self.grid.zc, rho0_prof)
         # nucleation (diagnostic, one-way) vs microphysics (two-way coupling)
         self.stage = cfg.nucleation.stage
         self.do_nucleation = self.stage == "one_way"
@@ -267,7 +284,10 @@ class Simulation:
         # (per-axis CFL<1); advecting with the divergent predictor lets multi-axis
         # convergence sum the inflow-CFL above 1 and create non-physical extrema.
         bc.apply_velocity_bcs(st, g, cfg)
-        res, it = self.pressure.project(st, dt, self.rho0)
+        if self.dynamics == "anelastic":
+            res, it = self.pressure.project_anelastic(st, dt, self.rho0_c, self.rho0_wface)
+        else:
+            res, it = self.pressure.project(st, dt, self.rho0)
         self._last_res = res; self._last_iters = it
         bc.apply_velocity_bcs(st, g, cfg)   # re-impose inflow (Neumann preserves it)
         # 4. scalar predictor: advect + diffuse with the divergence-free velocity
@@ -410,9 +430,19 @@ class Simulation:
         bud = diag.conservation_budgets(self.state, initial, self.rho0)
         stats = diag.summary_stats(self.state, self.last_nf)
         wall = _time.perf_counter() - self._t0
+        if self.dynamics == "anelastic":
+            core_note = ("Anelastic core: rho0(z) reference density with div(rho0 u)=0, "
+                         "so deep-column mass expansion (updrafts amplifying with height) "
+                         "is represented -- a strict improvement over Boussinesq for deep "
+                         "convection.  The reference density is time-independent (anelastic "
+                         "assumption); the flux-form scalar/momentum conservation and "
+                         "latent-heat closure are the subsequent milestones (M4-M5).")
+        else:
+            core_note = ("Boussinesq: density variations enter only through buoyancy; over a "
+                         "deep storm column (10-12 km) this is stretched beyond strict "
+                         "validity.  Use --dynamics anelastic for the deep-convection core.")
         limitations = [
-            ("Boussinesq: density variations enter only through buoyancy; over a deep "
-             "storm column (10-12 km) this is stretched beyond strict validity."),
+            core_note,
             ("|gradT| floored at gmin: the |gradT|->0 limit is the kernel's "
              "near-equilibrium result (parameterization), NOT the CNT limit."),
             ("Momentum advection uses a centre round-trip (v1 simplification); the "
@@ -425,10 +455,12 @@ class Simulation:
                 "latent-heat feedback + sedimentation; per-step latent heating, velocity "
                 "and temperature are bounded as documented stability safeguards."))
             if cfg.physics.scenario == "deep_convection":
+                _core = "anelastic" if self.dynamics == "anelastic" else "Boussinesq-stretched"
                 limitations.insert(2, ("Storm scale: stratified base state + warm-bubble "
-                    "trigger; Boussinesq-stretched demonstration on a coarse grid -- "
-                    "updraft speeds, condensate loading and surface totals are indicative, "
-                    "not quantitative."))
+                    "trigger; %s demonstration on a coarse grid -- updraft speeds, "
+                    "condensate loading and surface totals are indicative, not "
+                    "quantitative until the M4-M8 conservation/convergence criteria are met."
+                    % _core))
         else:
             limitations.insert(1, ("One-way: nucleation is diagnostic; the prognostic "
                 "state is NOT modified by microphysics (Batch 1)."))
@@ -455,6 +487,7 @@ class Simulation:
         report["geometry"] = _geom(cfg)
         report["memory_estimate_gb"] = _mem(cfg)
         report["precision"] = cfg.physics.precision
+        report["dynamics"] = self.dynamics
         report["cfl_limiter_last"] = getattr(self, "_dt_limiter", None)
         report["n_dt_reductions"] = getattr(self, "_n_dt_reductions", 0)
         if getattr(self.state, "surface_precip", None) is not None:
@@ -482,6 +515,7 @@ class Simulation:
             "dx": self.grid.dx, "dy": self.grid.dy, "dz": self.grid.dz,
             "duration": self.cfg.time.duration, "cfl": self.cfg.time.cfl,
             "stage": self.stage,
+            "dynamics": self.dynamics,
         }
 
 

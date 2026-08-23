@@ -62,6 +62,7 @@ class PhysicsConfig:
     bubble_dtheta: float = 3.0         # warm-bubble amplitude [K] (deep_convection)
     precision: str = "float64"         # float64 (scientific) | float32 (performance)
     pressure_gradient: float | None = None   # if set, p_drop = gradient * Lx [Pa/m]
+    dynamics: str = "boussinesq"       # boussinesq (test mode) | anelastic (deep convection)
 
 
 @dataclass
@@ -167,7 +168,8 @@ def from_dict(d: dict[str, Any]) -> SimulationConfig:
                                T_ref=_get(ph, "T_ref", None),
                                scenario=str(_get(ph, "scenario", "mixing_chamber")),
                                bubble_dtheta=float(_get(ph, "bubble_dtheta", 3.0)),
-                               precision=str(_get(ph, "precision", "float64")))
+                               precision=str(_get(ph, "precision", "float64")),
+                               dynamics=str(_get(ph, "dynamics", "boussinesq")))
     bd = _get(d, "boundaries", {})
     warm = _get(bd, "warm_inflow", {})
     cold = _get(bd, "cold_inflow", {})
@@ -237,6 +239,8 @@ def validate(cfg: SimulationConfig) -> None:
     assert 0 < ncells < 2_000_000_000, "number of cells out of range: %d" % ncells
     assert cfg.physics.precision in ("float32", "float64"), \
         "precision must be float32 or float64"
+    assert cfg.physics.dynamics in ("boussinesq", "anelastic"), \
+        "dynamics must be boussinesq or anelastic"
     assert 0 < cfg.time.cfl <= 1.0, "CFL must be in (0, 1]"
     assert cfg.time.dt_max > 0 and cfg.time.duration >= 0
     assert cfg.flow.advection_order in (1, 2)
@@ -329,6 +333,7 @@ def apply_overrides(cfg: SimulationConfig, *,
                    diagnostic_only: bool = False,
                    two_way: bool = False,
                    storm_scale: bool = False,
+                   dynamics: str | None = None,
                    method: str | None = None,
                    threads: int | None = None) -> SimulationConfig:
     """Return a copy of cfg with CLI overrides applied.  Precedence (low->high):
@@ -407,6 +412,8 @@ def apply_overrides(cfg: SimulationConfig, *,
         cfg.nucleation.stage = "one_way"
     if two_way:
         cfg.nucleation.stage = "hydrometeor"   # full two-way microphysics coupling
+    if dynamics is not None:
+        cfg.physics.dynamics = str(dynamics)
     if method is not None:
         cfg.nucleation.method = method
     # threads stored on the lookup config for the table build

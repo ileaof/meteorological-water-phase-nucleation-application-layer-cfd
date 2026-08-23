@@ -971,6 +971,7 @@ meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resoluti
 | `--one-way-coupling` | stage = one_way (diagnostic nucleation) |
 | `--two-way-coupling` / `--hydrometeors` | stage = hydrometeor (two-way microphysics: growth + latent heat + sedimentation) |
 | `--storm-scale` / `--deep-convection` | km-scale deep-convection storm: stratified sounding + warm-bubble trigger + two-way microphysics (demonstration; Boussinesq-stretched) |
+| `--dynamics boussinesq\|anelastic` | dynamical core. `boussinesq` (default, constant density — validated test mode); `anelastic` uses ρ₀(z) with ∇·(ρ₀**u**)=0, capturing deep-column mass expansion (updrafts amplifying with height). Milestone 3. |
 | `--no-microphysics` | stage = none (pure flow) |
 | `--diagnostic-only` | alias for one-way |
 | `--method direct\|lookup` | kernel evaluation method (lookup required at scale) |
@@ -1304,11 +1305,45 @@ chamber's ~1.3×10⁻⁴ mm — and it grows with run length.
 
 > **Demonstration-scale caveat.** Over a 10–12 km column the density varies by
 > ~2–3×, beyond the strict Boussinesq range, and the grid is coarse (~0.5–1 km).
-> The storm scenario is an **idealised demonstration** (Boussinesq-stretched), not
-> a validated deep-convection result: updraft speeds, condensate loading and
+> The default storm scenario is an **idealised demonstration** (Boussinesq-stretched),
+> not a validated deep-convection result: updraft speeds, condensate loading and
 > surface totals are indicative, not quantitative. Per-step latent heating,
-> velocity and temperature are bounded as documented stability safeguards; an
-> anelastic/compressible core is future work.
+> velocity and temperature are bounded as documented stability safeguards.
+
+### 28.7 Toward a quantitatively defensible core (milestone programme)
+
+The storm demonstration is being evolved, milestone by milestone, into a
+defensible deep-convection simulation (CPU-only: vectorised NumPy, sparse
+solvers, lookup tables). Each milestone is gated on quantitative criteria before
+the "idealised demonstration" caveats are lifted.
+
+| Milestone | Status | Delivers |
+|---|---|---|
+| M1 — audit | done | solver audit vs deep-convection requirements |
+| M2 — reference atmosphere | done | hydrostatic base state, Weisman–Klemp sounding, CAPE/CIN/LCL/LFC/EL diagnostics, sounding I/O (`examples/sounding_diagnostics.py`) |
+| M3 — anelastic core | done | `--dynamics anelastic`: ρ₀(z) reference density, ∇·(ρ₀**u**)=0, deep-column mass expansion (`examples/anelastic_vs_boussinesq.py`) |
+| M4–M9 | planned | mesh/CFL/conservation, conservative microphysics + latent heat, nucleation-lookup coupling, sedimentation/surface precip, convergence study, observational comparison |
+
+The **anelastic core** (M3) reuses the constant-coefficient Poisson operator by
+writing the velocity correction as `u = u* − (Δt/ρ₀,face)∇p′`, so the face
+density cancels the operator exactly and the mass-weighted continuity
+`∇·(ρ₀u)=0` is enforced with the cached factorisation — no extra cost over
+Boussinesq. Boussinesq remains the default validated test mode; the anelastic
+constraint reduces exactly to it when ρ₀ is constant (regression-tested).
+
+```bash
+# compare the two cores on the same warm-bubble trigger:
+python examples/anelastic_vs_boussinesq.py --N 16 --Nz 40 --duration 180
+
+# an anelastic storm run:
+python -m meteorological_flow.cli --storm-scale --dynamics anelastic \
+    --Nx 24 --Ny 24 --Nz 40 --duration 600 --output outputs/storm_anelastic --threads 8
+```
+
+Physical signature (dry-bubble comparison): the anelastic updraft ratio
+*w*ₐₙₑₗ/*w*ᵦₒᵤₛₛ rises with height and the plume penetrates ~1 km deeper,
+following the ρ₀(surface)/ρ₀(top) ≈ 3.4× mass-expansion scale — the effect the
+constant-density core structurally misses.
 
 ---
 

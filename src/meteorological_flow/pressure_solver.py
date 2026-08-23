@@ -127,5 +127,50 @@ class PressureSolver:
         state.w -= (dt / rho0) * gpz
         return res, it
 
+    def project_anelastic(self, state: FlowState, dt: float, rho0_c, rho0_wface):
+        """Anelastic projection: enforce div(rho0 u) ~ 0 with rho0 = rho0(z).
+
+        The reference density varies only with height, so the SAME constant-
+        coefficient 7-point Laplacian ``A`` is reused.  Writing the velocity
+        correction as ``u = u* - (dt/rho0_face) grad(p')`` makes the face density
+        cancel the operator exactly (rho0_face * (1/rho0_face) = 1), so
+
+            lap(p') = (1/dt) div(rho0 u*)         (density-weighted divergence)
+
+        is solved with the cached factorisation and the corrected velocity is
+        discretely divergence-free in the anelastic (mass-weighted) sense.  This
+        captures the deep-convection mass expansion (updrafts amplify as they
+        rise into lower rho0) that the constant-density Boussinesq mode misses.
+
+        Parameters
+        ----------
+        rho0_c : (nz,) reference density at cell centres.
+        rho0_wface : (nz+1,) reference density on the z-faces (w-points).
+        """
+        g = self.grid
+        rc = np.asarray(rho0_c, dtype=float).reshape(1, 1, -1)      # (1,1,nz)
+        rwf = np.asarray(rho0_wface, dtype=float).reshape(1, 1, -1)  # (1,1,nz+1)
+        # density-weighted divergence  div(rho0 u*).  rho0 = rho0(z) is constant
+        # in x,y at each level, so the horizontal terms factor rho0_c(k); the
+        # vertical term uses the face density on the staggered w-points.
+        dudx = (state.u[1:, :, :] - state.u[:-1, :, :]) / g.dx
+        dvdy = (state.v[:, 1:, :] - state.v[:, :-1, :]) / g.dy
+        wflux = rwf * state.w                                        # (nx,ny,nz+1)
+        dwdz = (wflux[:, :, 1:] - wflux[:, :, :-1]) / g.dz
+        div_rho = rc * (dudx + dvdy) + dwdz
+        # A = -lap, so rhs = -(1/dt) div(rho0 u*) gives lap(p') = (1/dt) div(rho0 u*)
+        rhs = -(1.0 / dt) * div_rho
+        p, res, it = self.solve(rhs)
+        state.p = p
+        gpx = g.grad_x_faces(p)   # boundary faces = 0 (Neumann)
+        gpy = g.grad_y_faces(p)
+        gpz = g.grad_z_faces(p)
+        # correct with the LOCAL face density (must match the weights above).
+        # x/y-faces at level k carry rho0_c(k); z-faces carry rho0_wface.
+        state.u -= (dt / rc) * gpx
+        state.v -= (dt / rc) * gpy
+        state.w -= (dt / rwf) * gpz
+        return res, it
+
 
 __all__ = ["PressureSolver"]

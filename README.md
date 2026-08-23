@@ -982,7 +982,7 @@ meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resoluti
 | `--Lx --Ly --Lz` [m] | domain dimensions (override YAML); **non-cubic allowed** |
 | `--Nx --Ny --Nz` | cells per axis (override YAML); highest precedence for the grid |
 | `--grid-resolution N` | shortcut for isotropic `nx=ny=nz=N` (any N; overridden by `--Nx…`) |
-| `--preset NAME` | mesh preset: `fast/light/recommended/advanced/convective-column` |
+| `--preset NAME` | mesh preset. Chamber: `fast/light/recommended/advanced/convective-column`. Deep-convection storm (imply the storm setup + anelastic core): `storm-quick/storm/storm-refined/storm-fine/storm-hires` (see §25.4) |
 | `--cfl` / `--dt-max S` | CFL target (0,1] / maximum timestep [s] |
 | `--pressure-drop Pa` / `--pressure-gradient Pa/m` | forcing, mutually exclusive (`drop = gradient·Lx`) |
 | `--float32` | store the prognostic state in float32 (performance/memory mode) |
@@ -1046,6 +1046,51 @@ conversion `N_expected = J·V_cell·Δt` always uses the **local cell volume**
 subgrid. Benchmark (pure flow, i7, 6 s): 25³ ≈ 3.8 steps/s, 50³ ≈ 0.5 steps/s,
 divmax 9×10⁻¹¹–1×10⁻⁸ (40³ uses direct `splu` and can be *slower* than 50³, which
 uses iterative CG).
+
+**Deep-convection storm presets** (i7-class). The chamber presets above are cubic
+~1 km boxes. The `storm-*` presets are meshes for the km-scale storm — each
+contains the equilibrium level (`Lz ≥ 16 km`), resolves the updraft (`Δz ≤ 400 m`),
+and **implies the whole storm setup** (stratified base + warm bubble + closed
+walls + damping top + two-way microphysics) with the **anelastic core** by
+default. One `--preset` instead of six flags; explicit `--dynamics/--Nx/--Lz…`
+still override. Direct solver up to 64 000 cells, CG above.
+
+| preset | grid (Nx×Ny×Nz) | domain (km) | Δx | Δz | cells | solver | ~wall / 600 s | use |
+|---|---|---|---|---|---|---|---|---|
+| `storm-quick` | 16×16×40 | 16×16×16 | 1000 m | 400 m | 10 240 | direct | ~45 s | quick look |
+| `storm` *(default)* | 24×24×45 | 20×20×18 | 833 m | 400 m | 25 920 | direct | ~2.6 min | qualitative storm |
+| `storm-refined` | 32×32×50 | 24×24×18 | 750 m | 360 m | 51 200 | direct | ~7 min | nicer picture |
+| `storm-fine` | 40×40×60 | 24×24×18 | 600 m | 300 m | 96 000 | CG | tens of min | detailed |
+| `storm-hires` | 48×48×64 | 24×24×18 | 500 m | 281 m | 147 456 | CG | ~½–1 hr+ | best CPU-only |
+
+Wall times measured on an i7 (anelastic, per 600 s simulated; double for 1200 s).
+Field memory is negligible (< 0.2 GB even at `storm-hires`) — wall-clock is the
+only real budget, and it scales super-linearly, so the three direct tiers are the
+sweet spot.
+
+```bash
+# the default qualitative storm (anelastic, EL-containing, ~2.6 min/600 s):
+python -m meteorological_flow.cli --preset storm --duration 900 --output outputs/storm
+
+# a finer picture, with Tecplot output for Tecplot/ParaView:
+python -m meteorological_flow.cli --preset storm-refined --duration 1200 --tecplot --output outputs/storm_refined
+
+# highest CPU-only resolution (CG; leave it ~½-1 hr+). --output-interval keeps
+# the (large) flow.dat/flow.nc to ~10 snapshots:
+python -m meteorological_flow.cli --preset storm-hires --duration 1200 --tecplot --output-interval 100 --output outputs/storm_hires
+
+# override the preset core or any single dimension:
+python -m meteorological_flow.cli --preset storm --dynamics boussinesq --Nz 50 --output outputs/storm_bouss
+```
+
+> **Qualitative, not quantitative.** These meshes are **convection-permitting**
+> (Δ ≈ 0.5–1 km): the storm exists and its bulk numbers (updraft ~55 % of the
+> parcel ceiling, cloud top near the EL, mixed-phase precip) are sensible — but
+> they are **not convection-resolving**. Converging deep-moist convection needs
+> `Δ ≲ 250 m`, ideally ~100 m (Bryan, Wyngaard & Fritsch 2003): ~0.66 M cells at
+> 250 m, ~10 M at 100 m over a 24×18 km domain — GPU/cluster territory, days-to-
+> weeks on one CPU — plus the open milestones M5 (conservative microphysics +
+> latent heat) → M8 (grid convergence) → M9 (observations).
 
 **Anisotropic CFL:** `dt = min(dt_adv, dt_diff, dt_max)`,
 `dt_adv = cfl/(|u|/dx+|v|/dy+|w|/dz)`, `dt_diff = 0.5/(K·(1/dx²+1/dy²+1/dz²))`;

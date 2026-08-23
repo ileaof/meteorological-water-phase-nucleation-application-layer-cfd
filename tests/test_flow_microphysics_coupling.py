@@ -110,6 +110,26 @@ def test_storm_scale_override_and_cli():
     assert args2.storm_scale is True
 
 
+def test_storm_presets():
+    """The storm-* presets imply the deep-convection setup + anelastic core, on a
+    deep (EL-containing) mesh; explicit --dynamics still overrides."""
+    from meteorological_flow.config import PRESETS
+    expected_nz = {"storm-quick": 40, "storm": 45, "storm-refined": 50,
+                   "storm-fine": 60, "storm-hires": 64}
+    for p, nz in expected_nz.items():
+        assert PRESETS[p].get("storm") is True
+        cfg = apply_overrides(SimulationConfig(), preset=p)
+        assert cfg.physics.scenario == "deep_convection"
+        assert cfg.physics.dynamics == "anelastic"          # deep-convection core
+        assert cfg.nucleation.stage == "hydrometeor"
+        assert cfg.boundaries.x_west == "wall" and cfg.boundaries.z_top == "damping_layer"
+        assert cfg.domain.Lz >= 16000.0 and cfg.grid.nz == nz   # deep enough for the EL
+        assert build_argparser().parse_args(["--preset", p]).preset == p
+    # explicit --dynamics overrides the preset's anelastic default
+    over = apply_overrides(SimulationConfig(), preset="storm", dynamics="boussinesq")
+    assert over.physics.dynamics == "boussinesq"
+
+
 def test_storm_scale_deep_convection_runs_stably():
     cfg = apply_overrides(SimulationConfig(), storm_scale=True)
     cfg.grid.nx = cfg.grid.ny = 10

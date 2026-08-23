@@ -155,10 +155,14 @@ def test_backward_compatible_config():
 
 # --- presets -------------------------------------------------------------
 def test_presets_defined():
-    assert set(PRESETS) == {"fast", "light", "recommended", "advanced", "convective-column"}
+    assert set(PRESETS) == {"fast", "light", "recommended", "advanced", "convective-column",
+                            "storm-quick", "storm", "storm-refined", "storm-fine", "storm-hires"}
     c = _cfg(preset="convective-column")
     gm = geometry(c)
     assert gm["n_cells"] == 50 * 50 * 125 and gm["Lz_m"] == 5000.0
+    # the storm-* presets carry the storm marker and are deep (EL-containing)
+    for p in ("storm-quick", "storm", "storm-refined", "storm-fine", "storm-hires"):
+        assert PRESETS[p].get("storm") is True and PRESETS[p]["Lz"] >= 16000.0
 
 
 # --- 17: small 25^3 smoke run records geometry ---------------------------

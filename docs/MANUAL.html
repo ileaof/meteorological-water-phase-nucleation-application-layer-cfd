@@ -1223,7 +1223,7 @@ ParaView. It is written alongside <code>flow.nc</code> and its write is guarded,
 <tr><td><code>--Lx --Ly --Lz</code> [m]</td><td>domain dimensions (override YAML); non-cubic allowed</td></tr>
 <tr><td><code>--Nx --Ny --Nz</code></td><td>cells per axis (override YAML); highest precedence for the grid</td></tr>
 <tr><td><code>--grid-resolution N</code></td><td>shortcut for isotropic <code>nx=ny=nz=N</code> (any N; overridden by <code>--Nx…</code>)</td></tr>
-<tr><td><code>--preset NAME</code></td><td>named mesh: <code>fast/light/recommended/advanced/convective-column</code> (see §25.4)</td></tr>
+<tr><td><code>--preset NAME</code></td><td>named mesh. Chamber: <code>fast/light/recommended/advanced/convective-column</code>. Deep-convection storm (imply the storm setup + anelastic core): <code>storm-quick/storm/storm-refined/storm-fine/storm-hires</code> (see §25.4)</td></tr>
 <tr><td><code>--cfl</code> / <code>--dt-max S</code></td><td>CFL target (0,1] / maximum timestep [s]</td></tr>
 <tr><td><code>--pressure-drop Pa</code> / <code>--pressure-gradient Pa/m</code></td><td>forcing; mutually exclusive (<code>drop = gradient·Lx</code>)</td></tr>
 <tr><td><code>--float32</code></td><td>store the prognostic state in float32 (performance/memory mode)</td></tr>
@@ -1284,6 +1284,47 @@ V_domain=1×10⁹ m³, N_cells=125000. Non-cubic domains (<code>Lx≠Ly≠Lz</co
 esses processos permanecem subgrid. Benchmark (fluxo puro, i7, 6 s simulados): 25³ ≈ 3.8 passos/s; 50³ ≈ 0.5 passos/s;
 divmax 9×10⁻¹¹–1×10⁻⁸. <strong>Observação:</strong> 40³ (64000 células) usa a fatoração direta <code>splu</code>
 (exata mas cara), enquanto 50³ usa CG iterativo — por isso 50³ pode ser <em>mais rápido</em> que 40³.</p>
+
+<h4 id="storm-presets">Deep-convection storm presets (i7-class)</h4>
+<p>The chamber presets above are cubic ~1 km boxes. The <code>storm-*</code> presets are meshes tuned for the
+km-scale deep-convection storm: each contains the equilibrium level (<code>Lz ≥ 16 km</code>), resolves the updraft
+vertically (<code>Δz ≤ 400 m</code>), and <strong>implies the whole storm setup</strong> (stratified base state,
+warm-bubble trigger, closed walls, damping top, two-way microphysics) with the <strong>anelastic core</strong> by
+default. Use one <code>--preset</code> instead of six flags; explicit <code>--dynamics</code>, <code>--Nx</code>,
+<code>--Lz</code> … still override. The direct pressure solver is used up to 64 000 cells; CG above.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>preset</th><th>grid (Nx×Ny×Nz)</th><th>domain (km)</th><th>Δx</th><th>Δz</th><th>cells</th><th>solver</th><th>~wall / 600 s</th><th>use</th></tr></thead>
+<tbody>
+<tr><td><code>storm-quick</code></td><td>16×16×40</td><td>16×16×16</td><td>1000 m</td><td>400 m</td><td>10 240</td><td>direct</td><td>~45 s</td><td>quick look</td></tr>
+<tr><td><code>storm</code> <em>(default)</em></td><td>24×24×45</td><td>20×20×18</td><td>833 m</td><td>400 m</td><td>25 920</td><td>direct</td><td>~2.6 min</td><td>qualitative storm</td></tr>
+<tr><td><code>storm-refined</code></td><td>32×32×50</td><td>24×24×18</td><td>750 m</td><td>360 m</td><td>51 200</td><td>direct</td><td>~7 min</td><td>nicer picture</td></tr>
+<tr><td><code>storm-fine</code></td><td>40×40×60</td><td>24×24×18</td><td>600 m</td><td>300 m</td><td>96 000</td><td>CG</td><td>tens of min</td><td>detailed</td></tr>
+<tr><td><code>storm-hires</code></td><td>48×48×64</td><td>24×24×18</td><td>500 m</td><td>281 m</td><td>147 456</td><td>CG</td><td>~½–1 hr+</td><td>best CPU-only</td></tr>
+</tbody></table></div>
+<p>Wall times are measured on an i7 (anelastic, per 600 s simulated; double for 1200 s). Field memory is negligible
+(&lt; 0.2 GB even at <code>storm-hires</code>) — <strong>wall-clock is the only real budget</strong>, and it scales
+super-linearly, so the three direct-solver tiers are the sweet spot.</p>
+<pre><code># the default qualitative storm (anelastic, EL-containing, ~2.6 min/600 s):
+python -m meteorological_flow.cli --preset storm --duration 900 --output outputs/storm
+
+# a finer picture with Tecplot output for Tecplot/ParaView:
+python -m meteorological_flow.cli --preset storm-refined --duration 1200 --tecplot --output outputs/storm_refined
+
+# the highest CPU-only resolution (CG solver; leave it running ~½-1 hr+).
+# --output-interval keeps the (large) flow.dat/flow.nc to ~10 snapshots:
+python -m meteorological_flow.cli --preset storm-hires --duration 1200 --tecplot --output-interval 100 --output outputs/storm_hires
+
+# override the preset core (Boussinesq test mode) or any single dimension:
+python -m meteorological_flow.cli --preset storm --dynamics boussinesq --Nz 50 --output outputs/storm_bouss</code></pre>
+<p class="callout"><span class="ct">Qualitative, not quantitative</span>These meshes are
+<strong>convection-permitting</strong> (Δ ≈ 0.5–1 km): the storm exists and its bulk numbers (updraft ~55 % of the
+parcel ceiling, cloud top near the EL, mixed-phase precip) are physically sensible. They are <strong>not
+convection-resolving</strong>. Converging deep-moist convection needs <code>Δ ≲ 250 m</code>, ideally ~100 m
+(Bryan, Wyngaard &amp; Fritsch 2003) — over a 24 km × 18 km domain that is ~0.66 M cells at 250 m and ~10 M at
+100 m, i.e. GPU/cluster territory, days-to-weeks on one CPU. A quantitative result also needs the still-open
+physics/validation milestones (M5 conservative microphysics + latent heat → M8 grid-convergence study → M9
+observational comparison). The <code>storm-*</code> presets are the right tool for a qualitatively-defensible
+demonstration, not a forecast.</p>
 
 <h4>CFL (anisotrópico) e limitação de passo</h4>
 <div class="eq">dt = min( dt_adv, dt_diff, dt_max )

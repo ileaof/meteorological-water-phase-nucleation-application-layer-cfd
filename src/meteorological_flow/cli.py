@@ -34,8 +34,10 @@ def build_argparser() -> argparse.ArgumentParser:
     p.add_argument("--Ny", type=int, default=None, help="cells in y")
     p.add_argument("--Nz", type=int, default=None, help="cells in z")
     p.add_argument("--preset", default=None, choices=sorted(cfgmod.PRESETS),
-                   help="named CPU mesh preset (fast/light/recommended/advanced/"
-                        "convective-column)")
+                   help="named CPU mesh preset. Chamber: fast/light/recommended/"
+                        "advanced/convective-column. Deep-convection storm (imply the "
+                        "storm setup + anelastic core): storm-quick/storm/storm-refined/"
+                        "storm-fine/storm-hires")
     p.add_argument("--cfl", type=float, default=None, help="CFL target (0,1]")
     p.add_argument("--dt-max", type=float, default=None, dest="dt_max",
                    help="maximum timestep [s]")

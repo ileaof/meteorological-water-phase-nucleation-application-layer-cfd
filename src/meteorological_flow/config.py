@@ -308,12 +308,42 @@ def format_geometry(cfg: SimulationConfig) -> str:
 # named CPU mesh presets (see the manual)
 # ---------------------------------------------------------------------------
 PRESETS = {
+    # shallow mixing-chamber meshes (cubic ~1 km box)
     "fast":     dict(Lx=1000.0, Ly=1000.0, Lz=1000.0, Nx=25, Ny=25, Nz=25),
     "light":    dict(Lx=1000.0, Ly=1000.0, Lz=1000.0, Nx=40, Ny=40, Nz=40),
     "recommended": dict(Lx=1000.0, Ly=1000.0, Lz=1000.0, Nx=50, Ny=50, Nz=50),
     "advanced": dict(Lx=1000.0, Ly=1000.0, Lz=1000.0, Nx=100, Ny=100, Nz=100),
     "convective-column": dict(Lx=2000.0, Ly=2000.0, Lz=5000.0, Nx=50, Ny=50, Nz=125),
+    # deep-convection storm meshes (imply the storm setup + anelastic core).
+    # `storm=True` -> apply_overrides configures the stratified deep-convection
+    # scenario (walls, damping top, two-way microphysics) around this grid.
+    # dx = Lx/Nx, dz = Lz/Nz; the direct pressure solver is used up to 64k cells
+    # (storm-quick/storm/storm-refined), CG above (storm-fine/storm-hires).
+    "storm-quick":   dict(Lx=16000.0, Ly=16000.0, Lz=16000.0, Nx=16, Ny=16, Nz=40, storm=True),
+    "storm":         dict(Lx=20000.0, Ly=20000.0, Lz=18000.0, Nx=24, Ny=24, Nz=45, storm=True),
+    "storm-refined": dict(Lx=24000.0, Ly=24000.0, Lz=18000.0, Nx=32, Ny=32, Nz=50, storm=True),
+    "storm-fine":    dict(Lx=24000.0, Ly=24000.0, Lz=18000.0, Nx=40, Ny=40, Nz=60, storm=True),
+    "storm-hires":   dict(Lx=24000.0, Ly=24000.0, Lz=18000.0, Nx=48, Ny=48, Nz=64, storm=True),
 }
+
+
+def _apply_storm_physics(cfg: SimulationConfig) -> None:
+    """Configure the km-scale deep-convection storm scenario (physics only, not
+    the grid/domain): stratified base state + warm-bubble trigger + closed walls
+    + damping top + two-way microphysics.  Shared by ``--storm-scale`` and the
+    ``storm-*`` presets.  Demonstration-scale (see base_state.py)."""
+    cfg.physics.scenario = "deep_convection"
+    cfg.physics.P0 = 100000.0
+    cfg.nucleation.stage = "hydrometeor"
+    cfg.boundaries.x_west = cfg.boundaries.x_east = "wall"
+    cfg.boundaries.y = "free_slip"
+    cfg.boundaries.z_top = "damping_layer"
+    cfg.boundaries.z_bottom = "free_slip"
+    cfg.flow.p_drop = 0.0
+    cfg.flow.gamma_damp = 0.06              # bound explosive buoyant runaway
+    cfg.flow.nu = cfg.flow.kappa = 80.0     # eddy viscosity/diffusivity at ~km res
+    cfg.time.cfl = 0.3
+    cfg.time.dt_max = 3.0                    # deep column: keep the fall/advective CFL < 1
 
 
 def apply_overrides(cfg: SimulationConfig, *,
@@ -345,26 +375,19 @@ def apply_overrides(cfg: SimulationConfig, *,
             raise ValueError("unknown preset '%s'; choices: %s"
                              % (preset, ", ".join(sorted(PRESETS))))
         pv = PRESETS[preset]
+        if pv.get("storm"):
+            # a storm-* preset carries the whole deep-convection setup and
+            # defaults to the anelastic core (explicit --dynamics still wins).
+            _apply_storm_physics(cfg)
+            cfg.physics.dynamics = "anelastic"
         cfg.domain.Lx, cfg.domain.Ly, cfg.domain.Lz = pv["Lx"], pv["Ly"], pv["Lz"]
         cfg.grid.nx, cfg.grid.ny, cfg.grid.nz = pv["Nx"], pv["Ny"], pv["Nz"]
     if storm_scale:
-        # km-scale deep-convection storm: stratified base state + warm-bubble
-        # trigger + closed walls, two-way microphysics.  Demonstration-scale
-        # (Boussinesq-stretched over a deep column) -- see base_state.py.
-        cfg.physics.scenario = "deep_convection"
-        cfg.physics.P0 = 100000.0
+        # km-scale deep-convection storm (physics), with the legacy default grid/
+        # domain.  For deeper, EL-containing meshes prefer the storm-* presets.
+        _apply_storm_physics(cfg)
         cfg.domain.Lx = cfg.domain.Ly = 16000.0
         cfg.domain.Lz = 10000.0
-        cfg.nucleation.stage = "hydrometeor"
-        cfg.boundaries.x_west = cfg.boundaries.x_east = "wall"
-        cfg.boundaries.y = "free_slip"
-        cfg.boundaries.z_top = "damping_layer"
-        cfg.boundaries.z_bottom = "free_slip"
-        cfg.flow.p_drop = 0.0
-        cfg.flow.gamma_damp = 0.06              # bound explosive buoyant runaway
-        cfg.flow.nu = cfg.flow.kappa = 80.0     # eddy viscosity/diffusivity at ~km res
-        cfg.time.cfl = 0.3
-        cfg.time.dt_max = 3.0                    # deep column: keep the fall/advective CFL < 1
         cfg.grid.nx = cfg.grid.ny = 24
         cfg.grid.nz = 40
     if grid_resolution is not None:

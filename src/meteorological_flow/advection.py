@@ -119,6 +119,64 @@ def advect_center(s, Uc, Vc, Wc, grid: Grid, dt: float, order: int = 1) -> np.nd
     return s + dt * tend
 
 
+def advect_center_massflux(s, uf, vf, wf, grid: Grid, dt: float,
+                           rho_c, rho_wf, order: int = 2) -> np.ndarray:
+    """Conservative flux-form advection using the PROJECTED staggered face
+    velocities and the reference density (Milestone 5).
+
+    Solves ``d(rho0 s)/dt = -div(rho0 u s)`` in flux form, so ``int rho0 s dV`` is
+    conserved up to the boundary flux.  Unlike :func:`advect_center`, the face
+    velocities are the solver's own divergence-free ``u, v, w`` (not a cell-centre
+    round-trip), so closed walls (``u_face=0``) carry exactly zero flux -- no
+    spurious leak -- and the anelastic ``rho0(z)`` weighting makes the mass-weighted
+    budget conservative.  ``order=2`` reconstructs the face value with a MUSCL
+    (minmod) limited slope -- monotone/TVD, positivity-preserving, and far less
+    diffusive than 1st-order upwind (which over-damps convection on a coarse grid).
+
+    Parameters
+    ----------
+    uf, vf, wf : staggered face velocities (grid.u_shape / v_shape / w_shape).
+    rho_c  : (nz,) reference density at cell centres.
+    rho_wf : (nz+1,) reference density on the z-faces.
+    order  : 1 (upwind) or 2 (MUSCL/minmod, default).
+    """
+    rc = np.asarray(rho_c, dtype=float)[None, None, :]        # (1,1,nz)
+    rwf = np.asarray(rho_wf, dtype=float)[None, None, :]      # (1,1,nz+1)
+    sx = np.empty(grid.u_shape); sy = np.empty(grid.v_shape); sz = np.empty(grid.w_shape)
+    if order >= 2:
+        # limited cell slopes (minmod of backward/forward diffs; 0 at edge cells),
+        # then upwind-biased reconstruction to the interior faces.
+        dsx = np.zeros_like(s); dsy = np.zeros_like(s); dsz = np.zeros_like(s)
+        dsx[1:-1, :, :] = _minmod(s[1:-1, :, :] - s[:-2, :, :], s[2:, :, :] - s[1:-1, :, :])
+        dsy[:, 1:-1, :] = _minmod(s[:, 1:-1, :] - s[:, :-2, :], s[:, 2:, :] - s[:, 1:-1, :])
+        dsz[:, :, 1:-1] = _minmod(s[:, :, 1:-1] - s[:, :, :-2], s[:, :, 2:] - s[:, :, 1:-1])
+        sx[1:-1, :, :] = np.where(uf[1:-1, :, :] > 0.0,
+                                  s[:-1, :, :] + 0.5 * dsx[:-1, :, :],
+                                  s[1:, :, :] - 0.5 * dsx[1:, :, :])
+        sy[:, 1:-1, :] = np.where(vf[:, 1:-1, :] > 0.0,
+                                  s[:, :-1, :] + 0.5 * dsy[:, :-1, :],
+                                  s[:, 1:, :] - 0.5 * dsy[:, 1:, :])
+        sz[:, :, 1:-1] = np.where(wf[:, :, 1:-1] > 0.0,
+                                  s[:, :, :-1] + 0.5 * dsz[:, :, :-1],
+                                  s[:, :, 1:] - 0.5 * dsz[:, :, 1:])
+    else:
+        sx[1:-1, :, :] = np.where(uf[1:-1, :, :] > 0.0, s[:-1, :, :], s[1:, :, :])
+        sy[:, 1:-1, :] = np.where(vf[:, 1:-1, :] > 0.0, s[:, :-1, :], s[:, 1:, :])
+        sz[:, :, 1:-1] = np.where(wf[:, :, 1:-1] > 0.0, s[:, :, :-1], s[:, :, 1:])
+    # domain-boundary faces: edge cell value (walls carry u_face=0 -> zero flux)
+    sx[0, :, :] = s[0, :, :]; sx[-1, :, :] = s[-1, :, :]
+    sy[:, 0, :] = s[:, 0, :]; sy[:, -1, :] = s[:, -1, :]
+    sz[:, :, 0] = s[:, :, 0]; sz[:, :, -1] = s[:, :, -1]
+    # mass fluxes rho0 * u_face * s_face
+    Fx = rc * uf * sx
+    Fy = rc * vf * sy
+    Fz = rwf * wf * sz
+    div = ((Fx[1:, :, :] - Fx[:-1, :, :]) / grid.dx
+           + (Fy[:, 1:, :] - Fy[:, :-1, :]) / grid.dy
+           + (Fz[:, :, 1:] - Fz[:, :, :-1]) / grid.dz)
+    return s - dt * div / rc      # d(rho0 s)/dt = -div  ->  s -= dt div/rho0
+
+
 def advect_momentum(state: FlowState, grid: Grid, dt: float, order: int = 1) -> None:
     """Apply advection tendency to u, v, w in place (v1 center round-trip)."""
     Uc, Vc, Wc = cell_velocity(state, grid)
@@ -154,4 +212,5 @@ def advect_momentum(state: FlowState, grid: Grid, dt: float, order: int = 1) -> 
             state.w += dt * tend_f
 
 
-__all__ = ["_minmod", "advect_center", "advect_momentum", "cell_velocity"]
+__all__ = ["_minmod", "advect_center", "advect_center_massflux",
+           "advect_momentum", "cell_velocity"]

@@ -1168,7 +1168,7 @@ called out per item below. The <code>summary.json</code> report carries the appl
 <li><strong>Dynamical core</strong>: in the mixing-chamber scenario the imposed <code>ΔP = 30 Pa</code> over 70000 Pa gives adiabatic expansion cooling ~0.1 K — second-order. Supersaturation is dominated by <strong>mixing</strong> and <strong>buoyant lifting</strong>, not by the pressure drop itself. For the deep-convection scenario the <strong>anelastic core</strong> (<code>--dynamics anelastic</code>) carries ρ<sub>0</sub>(z) and enforces ∇·(ρ<sub>0</sub><strong>u</strong>)=0; a fully compressible / low-Mach acoustic core remains future work (not needed for the anelastic soundproof regime).</li>
 <li><strong>Coupling stage</strong>: in the <strong>one-way</strong> stage nucleation is diagnostic — the prognostic state is not modified by microphysics. The <strong>two-way</strong> stage (<code>--two-way-coupling</code> / <code>--storm-scale</code>, Increment&nbsp;2) is implemented: hydrometeors form, latent heat feeds back on θ and the precipitating species sediment. Which stage runs is set by <code>--one-way-coupling</code> / <code>--two-way-coupling</code> (see §28).</li>
 <li><strong><code>|∇T|</code> floored at <code>gmin</code></strong>: the <code>|∇T| → 0</code> limit is the kernel's near-equilibrium result (parameterization), <strong>not</strong> the CNT limit. The CFD Cartesian <code>|∇T|</code> is identified with the kernel's radial <code>|dT/dr|</code> as a first-order subgrid closure (validation test 14 checks the limit).</li>
-<li><strong>Momentum advection deferred</strong> (v1 simplification): the velocity is governed by the body force + buoyancy + diffusion + projection; the <strong>scalars</strong> are advected by the resulting divergence-free velocity (which drives the mixing → supersaturation → nucleation). Fully conservative staggered momentum advection is a Batch-2 upgrade. The projection still enforces <code>∇·u ≈ 0</code>.</li>
+<li><strong>Scalar transport conservative; momentum advection deferred.</strong> For the deep-convection storm the <strong>scalars</strong> are advected by the projected divergence-free velocity with a <strong>conservative flux-form 2nd-order MUSCL</strong> scheme (&rho;<sub>0</sub>-weighted; M5) — <code>&int;&rho;<sub>0</sub>q</code> is conserved. The <strong>momentum</strong> equation is still governed by body force + buoyancy + diffusion + projection (no fully-conservative staggered momentum advection yet — a later upgrade); the mixing-chamber scenario keeps the older cell-centre scalar scheme.</li>
 <li><strong>Rayleigh momentum drag</strong> <code>γ = 0.2 /s</code> is a documented bulk subgrid dissipation that bounds the otherwise-unbounded Boussinesq buoyant convection (warm parcels do not cool on ascent, so without a sink the plume accelerates unboundedly). <code>γ = 0</code> disables it.</li>
 <li><strong>Rain/snow/graupel/hail</strong>: in the bare kernel (one-way) these are thermodynamic / microphysical <strong>favorability</strong> diagnostics, <strong>not</strong> precipitation prediction — a high nucleation rate never by itself implies rain or hail. In the <strong>two-way</strong> stage the single-moment bulk scheme (<code>precip_microphysics</code>) <em>does</em> model hydrometeor growth (condensation/deposition, autoconversion, accretion, riming, melting) and sedimentation, so precipitation is produced; at demonstration resolution the amounts remain <strong>qualitative</strong>, and the evidence-based confidence/caveat still gate any precipitation claim.</li>
 <li><strong>Not operational weather prediction</strong>; demonstration-scale only.</li>
@@ -1317,9 +1317,9 @@ python -m meteorological_flow.cli --preset storm-hires --duration 1200 --tecplot
 # override the preset core (Boussinesq test mode) or any single dimension:
 python -m meteorological_flow.cli --preset storm --dynamics boussinesq --Nz 50 --output outputs/storm_bouss</code></pre>
 <p class="callout"><span class="ct">Qualitative, not quantitative</span>These meshes are
-<strong>convection-permitting</strong> (Δ ≈ 0.5–1 km): the storm exists and its bulk numbers (updraft ~55 % of the
-parcel ceiling, cloud top near the EL, mixed-phase precip) are physically sensible. They are <strong>not
-convection-resolving</strong>. Converging deep-moist convection needs <code>Δ ≲ 250 m</code>, ideally ~100 m
+<strong>convection-permitting</strong> (Δ ≈ 0.5–1 km): the storm exists and its bulk numbers (updraft ~30 % of the
+parcel ceiling on a coarse grid, cloud top rising toward the EL, mixed-phase precip) are physically sensible. They
+are <strong>not convection-resolving</strong>. Converging deep-moist convection needs <code>Δ ≲ 250 m</code>, ideally ~100 m
 (Bryan, Wyngaard &amp; Fritsch 2003) — over a 24 km × 18 km domain that is ~0.66 M cells at 250 m and ~10 M at
 100 m, i.e. GPU/cluster territory, days-to-weeks on one CPU. A quantitative result also needs the still-open
 physics/validation milestones (M5 conservative microphysics + latent heat → M8 grid-convergence study → M9
@@ -1553,8 +1553,9 @@ max |w| = 43.3 m/s     T = 180.0 .. 335.0 K     max S_w = 1.74
   (local column maxima: rain 1.35, snow 0.72, graupel 1.98 mm)</div>
 <p class="note">The storm-scale run produces <strong>~1.9 mm domain-mean total precipitation</strong> (rain + snow +
 graupel) — about <strong>four orders of magnitude</strong> more than the shallow chamber's ~1.3e-4 mm — and it grows
-with run length. The updraft (~43 m/s) and mixed-phase partition are physically sensible for a continental deep
-convective cell.</p>
+with run length. <em>(These figures predate the M5 conservative transport, which spuriously concentrated moisture and
+inflated the intensity; the current honest updraft is ~20&ndash;30% of the parcel ceiling &mdash; see &sect;28.7.)</em>
+The mixed-phase partition is physically sensible for a continental deep convective cell.</p>
 <p class="callout"><span class="ct">Demonstration-scale caveat</span>Over a 10&ndash;12 km column the density varies by
 ~2&ndash;3&times;. The <strong>anelastic core</strong> (<code>--dynamics anelastic</code>, M3) now carries that
 &rho;<sub>0</sub>(z) variation explicitly, so the old &ldquo;beyond the strict Boussinesq range&rdquo; objection is
@@ -1567,11 +1568,12 @@ Updraft speeds, condensate loading and surface totals are therefore indicative; 
 a longer, moister run.</p>
 <p class="note">The theory-complete qualitative storm (Weisman&ndash;Klemp sounding + anelastic core + deep domain +
 two-way microphysics, with the environment and parcel-theory anchors reported) is
-<code>examples/deep_convection_storm.py</code>. A representative anelastic run (CAPE&nbsp;2864&nbsp;J/kg) reaches an
-updraft of ~41&nbsp;m/s &mdash; about <strong>55% of the parcel ceiling</strong> <code>&radic;(2&middot;CAPE) &asymp; 76 m/s</code>,
-the physically expected fraction after entrainment and loading &mdash; with a cloud top near the equilibrium level
-(~12&ndash;16&nbsp;km, i.e. an overshooting top) and mixed-phase precipitation. Those bulk numbers are qualitatively
-correct; they are not a forecast.</p>
+<code>examples/deep_convection_storm.py</code>. With the <strong>M5 conservative transport</strong> a representative
+anelastic run (CAPE&nbsp;2864&nbsp;J/kg, coarse 16&times;16&times;45, 900&nbsp;s) reaches an updraft of ~21&nbsp;m/s
+&mdash; about <strong>28% of the parcel ceiling</strong> <code>&radic;(2&middot;CAPE) &asymp; 76 m/s</code> &mdash; with
+a cloud top ~9&nbsp;km rising toward the equilibrium level and mixed-phase rain+graupel; it strengthens on finer grids
+and longer runs. (The earlier ~40&nbsp;m/s figure came from the non-conservative scheme, which spuriously concentrated
+low-level moisture &mdash; see the M5 note in &sect;28.7.) Those bulk numbers are qualitatively correct; not a forecast.</p>
 
 <h3>28.7 Toward a quantitatively defensible core (milestone programme)</h3>
 <p>The storm demonstration is being evolved, milestone by milestone, into a defensible deep-convection simulation
@@ -1582,7 +1584,8 @@ the &ldquo;idealised demonstration&rdquo; caveats are lifted.</p>
 <tr><td>M2 &mdash; reference atmosphere</td><td>done</td><td>hydrostatic base state, Weisman&ndash;Klemp sounding, CAPE/CIN/LCL/LFC/EL diagnostics, sounding I/O (<code>examples/sounding_diagnostics.py</code>)</td></tr>
 <tr><td>M3 &mdash; anelastic core</td><td>done</td><td><code>--dynamics anelastic</code>: &rho;<sub>0</sub>(z) reference density, &nabla;&middot;(&rho;<sub>0</sub><strong>u</strong>)=0, deep-column mass expansion (<code>examples/anelastic_vs_boussinesq.py</code>)</td></tr>
 <tr><td>M4 &mdash; conservation</td><td>done</td><td>the stratified reference is now an <strong>exact discrete equilibrium</strong> (perturbation-only diffusion + perturbation-preserving z-boundaries, so the limiters do not prop up a phantom circulation); conservation report (mass-continuity residual + complete water/energy budget). Vertical grid stretching and the formal convergence study fold into M8.</td></tr>
-<tr><td>M5&ndash;M9</td><td>planned</td><td>conservative microphysics + latent heat, nucleation-lookup coupling, sedimentation/surface precip, convergence study, observational comparison</td></tr>
+<tr><td>M5 &mdash; conservative transport</td><td>done</td><td><strong>conservative flux-form scalar transport</strong>: the projected divergence-free staggered velocity + &rho;<sub>0</sub> weighting + 2nd-order MUSCL, so <code>&int;&rho;<sub>0</sub>q</code> is conserved (dynamics-only water error ~1e&minus;3, down from &minus;5.7% with the old cell-centre scheme). <strong>Finding:</strong> the old storm's vigour was partly numerical (the non-divergence-free advecting velocity spuriously concentrated moisture); the honest storm is driven by a saturated-bubble trigger + light SGS damping (~28% of the parcel ceiling on a coarse grid). A residual water error grows with intensity (~2% at ~24 m/s) from the &rho;<sub>0</sub>-vs-actual-&rho; mismatch in the microphysics/sedimentation &mdash; consistent-density coupling is M6.</td></tr>
+<tr><td>M6&ndash;M9</td><td>planned</td><td>consistent-density microphysics coupling + nucleation-lookup, sedimentation refinement, convergence study, observational comparison</td></tr>
 </tbody></table>
 <p class="lead-in">The anelastic core (M3) reuses the constant-coefficient Poisson operator by writing the velocity
 correction as <code>u = u* &minus; (&Delta;t/&rho;<sub>0,face</sub>)&nabla;p&prime;</code>, so the face density cancels the operator

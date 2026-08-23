@@ -1084,7 +1084,7 @@ python -m meteorological_flow.cli --preset storm --dynamics boussinesq --Nz 50 -
 ```
 
 > **Qualitative, not quantitative.** These meshes are **convection-permitting**
-> (Δ ≈ 0.5–1 km): the storm exists and its bulk numbers (updraft ~55 % of the
+> (Δ ≈ 0.5–1 km): the storm exists and its bulk numbers (updraft ~30 % of the
 > parcel ceiling, cloud top near the EL, mixed-phase precip) are sensible — but
 > they are **not convection-resolving**. Converging deep-moist convection needs
 > `Δ ≲ 250 m`, ideally ~100 m (Bryan, Wyngaard & Fritsch 2003): ~0.66 M cells at
@@ -1386,11 +1386,13 @@ chamber's ~1.3×10⁻⁴ mm — and it grows with run length.
 The theory-complete qualitative storm — Weisman–Klemp sounding + anelastic core +
 deep domain + two-way microphysics, reporting the environment and the parcel-theory
 anchors — is [`examples/deep_convection_storm.py`](examples/deep_convection_storm.py).
-A representative anelastic run (CAPE 2864 J/kg) reaches an updraft of ~41 m/s —
-about **55% of the parcel ceiling** `√(2·CAPE) ≈ 76 m/s`, the physically expected
-fraction after entrainment and loading — with a cloud top near the equilibrium
-level (~12–16 km, an overshooting top) and mixed-phase precipitation. Those bulk
-numbers are qualitatively correct; they are not a forecast.
+With the **M5 conservative transport**, a representative anelastic run (CAPE
+2864 J/kg, coarse 16×16×45, 900 s) reaches an updraft of ~21 m/s — about
+**28 % of the parcel ceiling** `√(2·CAPE) ≈ 76 m/s` — with a cloud top ~9 km
+rising toward the equilibrium level and mixed-phase rain+graupel; it strengthens
+on finer grids and longer runs. (The earlier ~40 m/s figure came from the
+non-conservative scheme, which spuriously concentrated low-level moisture.) Those
+bulk numbers are qualitatively correct; they are not a forecast.
 
 ### 28.7 Toward a quantitatively defensible core (milestone programme)
 
@@ -1405,7 +1407,8 @@ the "idealised demonstration" caveats are lifted.
 | M2 — reference atmosphere | done | hydrostatic base state, Weisman–Klemp sounding, CAPE/CIN/LCL/LFC/EL diagnostics, sounding I/O (`examples/sounding_diagnostics.py`) |
 | M3 — anelastic core | done | `--dynamics anelastic`: ρ₀(z) reference density, ∇·(ρ₀**u**)=0, deep-column mass expansion (`examples/anelastic_vs_boussinesq.py`) |
 | M4 — conservation | done | stratified reference is now an **exact discrete equilibrium** (perturbation-only diffusion + perturbation-preserving z-boundaries — the limiters don't prop up a phantom circulation); conservation report (mass-continuity residual + complete water/energy budget). Grid stretching + formal convergence fold into M8. |
-| M5–M9 | planned | conservative microphysics + latent heat, nucleation-lookup coupling, sedimentation/surface precip, convergence study, observational comparison |
+| M5 — conservative transport | done | **conservative flux-form scalar transport** (projected divergence-free staggered velocity + ρ₀ weighting + 2nd-order MUSCL): `∫ρ₀q` conserved (dynamics-only water error ~1e−3, down from −5.7 %). **Finding:** the old storm's vigour was partly numerical; the honest storm uses a saturated-bubble trigger + light SGS damping (~28 % of the parcel ceiling, coarse grid). Residual water error grows with intensity (~2 % at ~24 m/s) from the ρ₀-vs-actual-ρ mismatch in microphysics/sedimentation — consistent-density coupling is M6. |
+| M6–M9 | planned | consistent-density microphysics coupling + nucleation-lookup, sedimentation refinement, convergence study, observational comparison |
 
 The **anelastic core** (M3) reuses the constant-coefficient Poisson operator by
 writing the velocity correction as `u = u* − (Δt/ρ₀,face)∇p′`, so the face

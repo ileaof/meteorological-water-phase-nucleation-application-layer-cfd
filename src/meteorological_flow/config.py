@@ -340,8 +340,12 @@ def _apply_storm_physics(cfg: SimulationConfig) -> None:
     cfg.boundaries.z_top = "damping_layer"
     cfg.boundaries.z_bottom = "free_slip"
     cfg.flow.p_drop = 0.0
-    cfg.flow.gamma_damp = 0.06              # bound explosive buoyant runaway
-    cfg.flow.nu = cfg.flow.kappa = 80.0     # eddy viscosity/diffusivity at ~km res
+    # With the M5 conservative transport (no spurious low-level concentration of
+    # theta'/moisture) the storm no longer runs away numerically, so the SGS
+    # dissipation is much lighter than before -- letting the CAPE drive a physical
+    # updraft (~30% of the parcel ceiling on a coarse grid, stronger when refined).
+    cfg.flow.gamma_damp = 0.005            # light Rayleigh drag (bounds extremes)
+    cfg.flow.nu = cfg.flow.kappa = 20.0    # eddy viscosity/diffusivity at ~km res
     cfg.time.cfl = 0.3
     cfg.time.dt_max = 3.0                    # deep column: keep the fall/advective CFL < 1
 

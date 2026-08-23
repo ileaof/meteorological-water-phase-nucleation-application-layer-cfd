@@ -80,6 +80,17 @@ def _deep_convection_initial(grid: Grid, cfg: SimulationConfig, base=None) -> Fl
     bc.apply_velocity_bcs(state, grid, cfg)
     bc.apply_scalar_bcs(state, grid, cfg, theta0=theta0, qv0=qv0)
     state.diagnose(cfg)
+    # Moisten the warm-bubble core to near-saturation: a warm-but-dry thermal has
+    # LOWER RH (warming raises q_sat) and would not condense, so it never taps the
+    # CAPE.  A saturated thermal condenses on the first ascent -> latent heat ->
+    # a physically-triggered updraft.  (With the M5 conservative transport, this
+    # honest trigger is what drives the storm; the old dry bubble relied on the
+    # non-conservative scheme spuriously concentrating moisture.)
+    if cfg.physics.bubble_dtheta > 0.0:
+        qsat = th.q_v_from_p_v(th.psat_water(state.T), state.P_total)
+        core = dth > 0.5 * cfg.physics.bubble_dtheta
+        state.qv = np.where(core, np.maximum(state.qv, 0.97 * qsat), state.qv)
+        state.diagnose(cfg)
     return state
 
 
@@ -187,6 +198,19 @@ class Simulation:
             # rho0 on the z-faces (nz+1); np.interp clamps to the edge values
             # beyond the cell-centre range (constant extrapolation at ground/top).
             self.rho0_wface = np.interp(self.grid.zf, self.grid.zc, rho0_prof)
+        # conservative scalar transport (M5): the deep_convection scenario advects
+        # with the projected divergence-free staggered velocity + reference density
+        # (int rho0 q conserved, no wall leak).  Anelastic uses rho0(z); the
+        # Boussinesq storm uses constant 1 (still exact flux form).
+        self._transport_rho_c = None
+        self._transport_rho_wf = None
+        if cfg.physics.scenario == "deep_convection":
+            if self.rho0_c is not None:
+                self._transport_rho_c = self.rho0_c
+                self._transport_rho_wf = self.rho0_wface
+            else:
+                self._transport_rho_c = np.ones(self.grid.nz)
+                self._transport_rho_wf = np.ones(self.grid.nz + 1)
         # nucleation (diagnostic, one-way) vs microphysics (two-way coupling)
         self.stage = cfg.nucleation.stage
         self.do_nucleation = self.stage == "one_way"
@@ -291,23 +315,37 @@ class Simulation:
             res, it = self.pressure.project(st, dt, self.rho0)
         self._last_res = res; self._last_iters = it
         bc.apply_velocity_bcs(st, g, cfg)   # re-impose inflow (Neumann preserves it)
-        # 4. scalar predictor: advect + diffuse with the divergence-free velocity
-        Uc, Vc, Wc = adv.cell_velocity(st, g)
-        st.theta = adv.advect_center(st.theta, Uc, Vc, Wc, g, dt, order)
-        qv_new = adv.advect_center(st.qv, Uc, Vc, Wc, g, dt, order)
-        # positivity of q_v (last-resort clip; bookkeep loss)
+        # 4. scalar predictor: advect with the divergence-free velocity.  The
+        # deep_convection storm uses the CONSERVATIVE mass-flux transport (M5):
+        # the projected staggered velocity + reference density, in flux form, so
+        # int rho0 q telescopes exactly to the boundary flux (conservative at any
+        # intensity) and the closed walls carry zero flux (no spurious leak).  The
+        # 2nd-order MUSCL/minmod reconstruction keeps it from diffusing away the
+        # steep base theta0(z)/qv0(z) (which 1st-order upwind would erode, killing
+        # the stratification / CAPE).  The mixing chamber keeps the cell-centre
+        # scheme (its inflow/outflow BCs).
+        if cfg.physics.scenario == "deep_convection":
+            trc, trwf = self._transport_rho_c, self._transport_rho_wf
+            _adv = lambda f: adv.advect_center_massflux(f, st.u, st.v, st.w, g, dt, trc, trwf, order=2)
+        else:
+            Uc, Vc, Wc = adv.cell_velocity(st, g)
+            _adv = lambda f: adv.advect_center(f, Uc, Vc, Wc, g, dt, order)
+        st.theta = _adv(st.theta)
+        qv_new = _adv(st.qv)
+        # positivity of q_v (last-resort clip; bookkeep loss).  Monotone upwind
+        # under CFL<=1 should keep q_v>=0, so this rarely bites.
         clip_loss = float(np.sum(np.minimum(qv_new, 0.0)) * g.cell_vol)
         if clip_loss < 0:
             self._last_clip = clip_loss
         st.qv = np.maximum(qv_new, 0.0)
         if self.do_microphysics:   # transport cloud + precipitating hydrometeors
             st.ensure_hydrometeors()
-            st.ql = np.maximum(adv.advect_center(st.ql, Uc, Vc, Wc, g, dt, order), 0.0)
-            st.qi = np.maximum(adv.advect_center(st.qi, Uc, Vc, Wc, g, dt, order), 0.0)
-            st.qr = np.maximum(adv.advect_center(st.qr, Uc, Vc, Wc, g, dt, order), 0.0)
-            st.qs = np.maximum(adv.advect_center(st.qs, Uc, Vc, Wc, g, dt, order), 0.0)
-            st.qg = np.maximum(adv.advect_center(st.qg, Uc, Vc, Wc, g, dt, order), 0.0)
-            st.qh = np.maximum(adv.advect_center(st.qh, Uc, Vc, Wc, g, dt, order), 0.0)
+            st.ql = np.maximum(_adv(st.ql), 0.0)
+            st.qi = np.maximum(_adv(st.qi), 0.0)
+            st.qr = np.maximum(_adv(st.qr), 0.0)
+            st.qs = np.maximum(_adv(st.qs), 0.0)
+            st.qg = np.maximum(_adv(st.qg), 0.0)
+            st.qh = np.maximum(_adv(st.qh), 0.0)
         # perturbation-only diffusion vs the stratified reference (deep_convection):
         # diffusing the full curved theta0(z)/qv0(z) would inject spurious buoyancy.
         st.theta = dif.diffuse_center(st.theta, g, cfg.flow.kappa, dt, base=self.theta0_field)
@@ -437,9 +475,13 @@ class Simulation:
             core_note = ("Anelastic core: rho0(z) reference density with div(rho0 u)=0, "
                          "so deep-column mass expansion (updrafts amplifying with height) "
                          "is represented -- a strict improvement over Boussinesq for deep "
-                         "convection.  The reference density is time-independent (anelastic "
-                         "assumption); the flux-form scalar/momentum conservation and "
-                         "latent-heat closure are the subsequent milestones (M4-M5).")
+                         "convection.  Scalar transport is now conservative flux-form (M5): "
+                         "the projected staggered velocity + rho0 weighting + 2nd-order "
+                         "MUSCL, so int rho0 q is conserved (dynamics-only water error "
+                         "~1e-3).  A residual water error grows with updraft strength "
+                         "(~2% at ~24 m/s) from the density-weighting mismatch between the "
+                         "rho0-based transport and the actual-rho microphysics/sedimentation "
+                         "-- a consistent-density coupling is the M6 refinement.")
         else:
             core_note = ("Boussinesq: density variations enter only through buoyancy; over a "
                          "deep storm column (10-12 km) this is stretched beyond strict "

@@ -64,6 +64,26 @@ def test_storm_reports_small_mass_residual_and_water_budget():
         assert abs(c["total_energy_rel_err"]) < 1e-2, dyn
 
 
+def test_massflux_transport_conserves_and_positive():
+    """The M5 conservative transport conserves int rho0 s exactly in a closed box
+    (zero boundary flux) and preserves positivity (MUSCL/minmod, small CFL)."""
+    from meteorological_flow import advection as adv
+    g = Grid(nx=8, ny=8, nz=10, Lx=8000, Ly=8000, Lz=10000)
+    rng = np.random.default_rng(0)
+    uf = rng.standard_normal(g.u_shape); uf[0] = uf[-1] = 0.0      # closed walls
+    vf = rng.standard_normal(g.v_shape); vf[:, 0] = vf[:, -1] = 0.0
+    wf = rng.standard_normal(g.w_shape); wf[:, :, 0] = wf[:, :, -1] = 0.0
+    rho_c = np.linspace(1.1, 0.4, g.nz)
+    rho_wf = np.interp(g.zf, g.zc, rho_c)
+    s = np.abs(rng.standard_normal(g.center_shape)) + 0.1          # positive
+    m0 = float((rho_c[None, None, :] * s).sum())
+    for order in (1, 2):
+        s2 = adv.advect_center_massflux(s, uf, vf, wf, g, 1e-3, rho_c, rho_wf, order=order)
+        m1 = float((rho_c[None, None, :] * s2).sum())
+        assert abs(m1 - m0) < 1e-9 * abs(m0), order          # int rho0 s conserved
+        assert np.min(s2) >= -1e-12, order                   # positivity (small dt)
+
+
 def test_water_measure_label_present():
     cfg = _storm_cfg("anelastic", duration=30.0)
     g = Grid(nx=12, ny=12, nz=30, Lx=cfg.domain.Lx, Ly=cfg.domain.Ly, Lz=cfg.domain.Lz)

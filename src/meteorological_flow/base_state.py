@@ -41,25 +41,40 @@ class BaseState:
     p0: np.ndarray          # base pressure [Pa]                (nz,)
     T0: np.ndarray          # base temperature [K]              (nz,)
     rho0: np.ndarray        # base density [kg/m^3]             (nz,)
+    u0: np.ndarray = None   # base zonal wind [m/s]             (nz,)
+    v0: np.ndarray = None   # base meridional wind [m/s]        (nz,)
+
+    def __post_init__(self):
+        nz = np.asarray(self.zc).size
+        if self.u0 is None:
+            self.u0 = np.zeros(nz)
+        if self.v0 is None:
+            self.v0 = np.zeros(nz)
 
     def field(self, arr1d, shape):
         """Broadcast a (nz,) base profile to the (nx,ny,nz) grid."""
-        return np.broadcast_to(arr1d.reshape(1, 1, -1), shape).copy()
+        return np.broadcast_to(np.asarray(arr1d).reshape(1, 1, -1), shape).copy()
 
 
 def build_base_state(grid, *, T_sfc=301.0, p_sfc=101325.0, RH_sfc=0.85,
-                     dtheta_dz=3.2e-3, q_scale_height=3400.0,
-                     RH_min=0.45) -> BaseState:
+                     dtheta_dz=3.2e-3, q_scale_height=3400.0, RH_min=0.45,
+                     z_trop=12000.0, dtheta_dz_strat=1.6e-2) -> BaseState:
     """Return a hydrostatic conditionally-unstable :class:`BaseState`.
 
-    ``dtheta_dz`` [K/m] sets the (stable) stratification; ``q_scale_height`` [m]
-    the moisture lapse.  Defaults give ~CAPE-supporting warm-sector conditions.
+    ``dtheta_dz`` [K/m] sets the tropospheric stratification; above ``z_trop``
+    the (much larger) ``dtheta_dz_strat`` gives a stable stratosphere so a lifted
+    parcel is capped (a physical equilibrium level / finite CAPE).  For domains
+    shallower than ``z_trop`` (e.g. the 10 km storm) the stratosphere is simply
+    out of the domain and the profile is unchanged.
     """
     zc = np.asarray(grid.zc, dtype=float)
     nz = zc.size
 
     theta_sfc = float(th.theta_from_T(T_sfc, p_sfc, th.P0_REF))
-    theta0 = theta_sfc + dtheta_dz * zc
+    theta0 = np.where(
+        zc <= z_trop,
+        theta_sfc + dtheta_dz * zc,
+        theta_sfc + dtheta_dz * z_trop + dtheta_dz_strat * (zc - z_trop))
 
     # surface vapour from RH, drying aloft (also capped by a minimum RH so the
     # mid-troposphere is not bone dry)
@@ -108,4 +123,163 @@ def warm_bubble(grid, *, dtheta=2.5, x_c=None, y_c=None, z_c=1500.0,
         np.broadcast_to(dqv_pert, grid.center_shape).copy()
 
 
-__all__ = ["BaseState", "build_base_state", "warm_bubble"]
+def weisman_klemp(grid, *, theta_sfc=300.0, theta_tr=343.0, T_tr=213.0,
+                  z_tr=12000.0, qv_sfc=0.014, p_sfc=100000.0,
+                  u_shear=0.0, u_half=3000.0) -> BaseState:
+    """Weisman & Klemp (1982, MWR 110, 504) analytic sounding -- the standard
+    idealised deep-convection reference (CAPE ~ 2000-2500 J/kg).
+
+        theta(z) = theta_sfc + (theta_tr-theta_sfc)(z/z_tr)^(5/4),  z <= z_tr
+                 = theta_tr exp[ g/(c_p T_tr) (z - z_tr) ],         z >  z_tr
+        RH(z)    = 1 - 0.75 (z/z_tr)^(5/4)  (0.25 above z_tr),
+        q_v(z)   = min(q_v,sfc, RH * q_sat)   (constant-mixing-ratio boundary layer)
+
+    Optional unidirectional shear ``u_shear`` [m/s] ramped over ``u_half`` [m].
+    """
+    z = np.asarray(grid.zc, dtype=float)
+    r = np.clip(z / z_tr, 0.0, None)
+    theta0 = np.where(z <= z_tr,
+                      theta_sfc + (theta_tr - theta_sfc) * r ** 1.25,
+                      theta_tr * np.exp(th.g0 / (th.cp_d * T_tr) * (z - z_tr)))
+    RH = np.where(z <= z_tr, np.maximum(1.0 - 0.75 * r ** 1.25, 0.25), 0.25)
+
+    # hydrostatic integration with the WK moisture rule
+    nz = z.size
+    p0 = np.empty(nz)
+    T0 = np.empty(nz)
+    qv0 = np.empty(nz)
+    p_prev, z_prev = p_sfc, 0.0
+    for k in range(nz):
+        dz = z[k] - z_prev
+        p_new = p_prev
+        for _ in range(3):
+            Tk = float(th.T_from_theta(theta0[k], p_new, th.P0_REF))
+            qsat = float(th.q_v_from_p_v(th.psat_water(Tk), p_new))
+            qv = min(qv_sfc, RH[k] * qsat)
+            Tv = Tk * (1.0 + 0.61 * qv)
+            p_new = p_prev * float(np.exp(-th.g0 * dz / (th.R_d * Tv)))
+        p0[k] = p_new
+        T0[k] = float(th.T_from_theta(theta0[k], p0[k], th.P0_REF))
+        qv0[k] = min(qv_sfc, RH[k] * float(th.q_v_from_p_v(th.psat_water(T0[k]), p0[k])))
+        p_prev, z_prev = p_new, z[k]
+
+    rho0 = p0 / (th.R_d * T0 * (1.0 + 0.61 * qv0))
+    u0 = u_shear * np.tanh(z / u_half)                 # unidirectional shear
+    return BaseState(zc=z, theta0=theta0, qv0=qv0, p0=p0, T0=T0, rho0=rho0,
+                     u0=u0, v0=np.zeros(nz))
+
+
+# ---------------------------------------------------------------------------
+# parcel ascent + sounding diagnostics (CAPE, CIN, LCL, LFC, EL, N^2, shear)
+# ---------------------------------------------------------------------------
+def _qsat(T, p):
+    """Saturation mixing ratio over water [kg/kg] (engine, read-only)."""
+    return float(th.q_v_from_p_v(th.psat_water(float(T)), float(p)))
+
+
+def _moist_lapse(T, p):
+    """Pseudo-adiabatic (saturated) lapse rate -dT/dz [K/m] (Bolton form)."""
+    es = float(th.psat_water(float(T)))
+    rs = th.EPS * es / max(p - es, 1.0)
+    num = th.g0 * (1.0 + th.Lv * rs / (th.R_d * T))
+    den = th.cp_d + th.Lv ** 2 * rs * th.EPS / (th.R_d * T ** 2)
+    return num / den
+
+
+def parcel_profile(base: "BaseState"):
+    """Lift a surface parcel dry- then pseudo-moist-adiabatically on the model
+    levels.  Returns (T_parcel[z], qv_parcel[z], lcl_index or None)."""
+    z, p = np.asarray(base.zc), np.asarray(base.p0)
+    nz = z.size
+    theta_sfc = float(th.theta_from_T(base.T0[0], p[0], th.P0_REF))
+    qv_sfc = float(base.qv0[0])
+    Tp = np.empty(nz)
+    qvp = np.empty(nz)
+    lcl = None
+    for k in range(nz):
+        if lcl is None:                              # unsaturated -> dry adiabat
+            Tk = float(th.T_from_theta(theta_sfc, p[k], th.P0_REF))
+            if qv_sfc >= _qsat(Tk, p[k]):
+                lcl = k
+                Tp[k] = Tk
+                qvp[k] = _qsat(Tk, p[k])
+            else:
+                Tp[k] = Tk
+                qvp[k] = qv_sfc
+        else:                                        # saturated -> moist adiabat
+            dz = z[k] - z[k - 1]
+            Tp[k] = Tp[k - 1] - _moist_lapse(Tp[k - 1], p[k - 1]) * dz
+            qvp[k] = _qsat(Tp[k], p[k])
+    return Tp, qvp, lcl
+
+
+def _cross_level(z, f, target, decreasing=True):
+    """Linear-interpolated height where profile f crosses `target`."""
+    f = np.asarray(f)
+    for k in range(1, len(z)):
+        a, b = f[k - 1], f[k]
+        if (a - target) * (b - target) <= 0 and a != b:
+            w = (target - a) / (b - a)
+            return float(z[k - 1] + w * (z[k] - z[k - 1]))
+    return None
+
+
+def _bulk_shear(base, z1=0.0, z2=6000.0):
+    """|V(z2) - V(z1)| bulk vertical wind shear [m/s]."""
+    u = np.interp([z1, z2], base.zc, base.u0)
+    v = np.interp([z1, z2], base.zc, base.v0)
+    return float(np.hypot(u[1] - u[0], v[1] - v[0]))
+
+
+def sounding_diagnostics(base: "BaseState") -> dict:
+    """CAPE/CIN [J/kg], LCL/LFC/EL/freezing level [m], Brunt-Vaisala N^2(z) and
+    0-6 km bulk shear for a reference sounding."""
+    z, p = np.asarray(base.zc), np.asarray(base.p0)
+    Tp, qvp, lcl_k = parcel_profile(base)
+    Tv_p = Tp * (1.0 + 0.61 * qvp)                    # pseudo-adiabatic (no loading)
+    Tv_e = np.asarray(base.T0) * (1.0 + 0.61 * np.asarray(base.qv0))
+    B = th.g0 * (Tv_p - Tv_e) / Tv_e                  # parcel buoyancy [m/s^2]
+
+    cape = cin = 0.0
+    lfc_k = el_k = None
+    if lcl_k is not None:
+        for k in range(lcl_k + 1, len(z)):
+            dz = z[k] - z[k - 1]
+            bk = 0.5 * (B[k] + B[k - 1])
+            if lfc_k is None and B[k] > 0.0:
+                lfc_k = k
+            if lfc_k is not None:
+                if bk > 0.0:
+                    cape += bk * dz
+                elif el_k is None and el_k != lfc_k:
+                    el_k = k
+                    break
+        if lfc_k is not None:                         # CIN: negative area below LFC
+            for k in range(1, lfc_k):
+                dz = z[k] - z[k - 1]
+                bk = 0.5 * (B[k] + B[k - 1])
+                if bk < 0.0:
+                    cin += bk * dz
+
+    dth = np.gradient(np.asarray(base.theta0), z)
+    N2 = th.g0 / np.asarray(base.theta0) * dth
+    return {
+        "CAPE_J_kg": float(cape),
+        "CIN_J_kg": float(cin),
+        "LCL_m": (float(z[lcl_k]) if lcl_k is not None else None),
+        "LFC_m": (float(z[lfc_k]) if lfc_k is not None else None),
+        "EL_m": (float(z[el_k]) if el_k is not None else None),
+        "freezing_level_m": _cross_level(z, base.T0, 273.15),
+        "w_max_parcel_m_s": float(np.sqrt(2.0 * max(cape, 0.0))),   # sqrt(2 CAPE)
+        "N2_1_s2": N2,
+        "N2_mean_1_s2": float(np.mean(N2)),
+        "shear_0_6km_m_s": _bulk_shear(base, 0.0, 6000.0),
+        "parcel_T_K": Tp,
+        "parcel_buoyancy_m_s2": B,
+    }
+
+
+__all__ = [
+    "BaseState", "build_base_state", "weisman_klemp", "warm_bubble",
+    "parcel_profile", "sounding_diagnostics",
+]

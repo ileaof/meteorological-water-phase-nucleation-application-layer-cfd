@@ -130,17 +130,19 @@ def _build_lookup(cfg: SimulationConfig, outdir: str, adapter: NucleationAdapter
 
 
 class Simulation:
-    def __init__(self, cfg: SimulationConfig, restart: str | None = None):
+    def __init__(self, cfg: SimulationConfig, restart: str | None = None, base=None):
         self.cfg = cfg
         self.grid = _grid_from_config(cfg)
         self.rng = np.random.default_rng(cfg.random_seed)
-        # deep-convection base state (stratified sounding) for perturbation buoyancy
+        # deep-convection base state (stratified sounding) for perturbation buoyancy;
+        # an explicit `base` (e.g. Weisman-Klemp or a radiosonde) overrides the default.
+        self._base_override = base
         self.base = None
         self.theta0_field = None
         self.qv0_field = None
         if cfg.physics.scenario == "deep_convection":
             from .base_state import build_base_state
-            self.base = build_base_state(self.grid)
+            self.base = base if base is not None else build_base_state(self.grid)
             self.theta0_field = self.base.field(self.base.theta0, self.grid.center_shape)
             self.qv0_field = self.base.field(self.base.qv0, self.grid.center_shape)
         if restart:

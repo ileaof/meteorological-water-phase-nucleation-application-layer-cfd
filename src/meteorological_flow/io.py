@@ -24,6 +24,12 @@ def _centers(state: FlowState) -> dict:
     }
 
 
+def _hydro(state: FlowState, name: str) -> np.ndarray:
+    """Precipitating-species field, or zeros if the run does not carry it."""
+    a = getattr(state, name, None)
+    return np.asarray(a) if a is not None else np.zeros(state.grid.center_shape)
+
+
 def snapshot(state: FlowState, nf: NucleationField, t: float, rho0: float) -> dict:
     """Collect a time-slice of all output fields (cell-centred) as a dict."""
     c = _centers(state)
@@ -34,6 +40,8 @@ def snapshot(state: FlowState, nf: NucleationField, t: float, rho0: float) -> di
         "P": state.P_total, "p_v": state.pv,
         "RH_water": state.RH_w, "RH_ice": state.RH_i,
         "q_v": state.qv, "q_l": state.ql, "q_i": state.qi,
+        "q_r": _hydro(state, "qr"), "q_s": _hydro(state, "qs"),
+        "q_g": _hydro(state, "qg"), "q_h": _hydro(state, "qh"),
         "S_w": state.S_w, "S_i": state.S_i,
         "gradT_mag": state.gradT_mag,
         "DeltaT_liquid": nf.Delta_T[0], "DeltaT_ice": nf.Delta_T[1],
@@ -96,25 +104,36 @@ def write_netcdf(snapshots: list, path: str, grid: Grid, attrs: dict) -> str:
 # unit in brackets (py2tec / Tecplot 360 accept quoted names with brackets).
 #
 # The meteorological variable set (adapted from the CFDPYGPU X,Y,Z,U,V,W,
-# Pressure,Temperature,Alpha core): the condensate mixing ratio q_cloud plays
-# the role of the VOF "Alpha" phase fraction.
+# Pressure,Temperature,Alpha core): the cloud condensate q_cloud (=q_l+q_i)
+# plays the role of the VOF "Alpha" phase fraction, and the precipitating
+# species q_rain/q_snow/q_graupel/q_hail are exported as their own variables.
 _TECPLOT_VARS = [
     "X [m]", "Y [m]", "Z [m]",
     "U [m/s]", "V [m/s]", "W [m/s]",
     "Pressure [Pa]", "Temperature [K]",
-    "q_v [kg/kg]", "q_cloud [kg/kg]", "S_w [-]",
+    "q_v [kg/kg]", "q_cloud [kg/kg]",
+    "q_rain [kg/kg]", "q_snow [kg/kg]", "q_graupel [kg/kg]", "q_hail [kg/kg]",
+    "S_w [-]",
 ]
 
 
 def _tecplot_columns(grid: Grid, snap: dict, Xf, Yf, Zf):
-    """Fortran-flattened node columns for one snapshot (order matches _TECPLOT_VARS)."""
-    r = lambda a: np.asarray(a).ravel(order="F")
-    qcloud = np.asarray(snap["q_l"]) + np.asarray(snap["q_i"])
+    """Fortran-flattened node columns for one snapshot (order matches _TECPLOT_VARS).
+
+    Missing precipitating-species keys default to zeros so the exporter also
+    works for one-way / no-microphysics snapshots.
+    """
+    shp = grid.center_shape
+
+    def r(key):
+        a = snap.get(key)
+        return np.zeros(shp).ravel(order="F") if a is None else np.asarray(a).ravel(order="F")
+
+    qcloud = (np.asarray(snap["q_l"]) + np.asarray(snap["q_i"])).ravel(order="F")
     return np.column_stack([
         Xf, Yf, Zf,
-        r(snap["u"]), r(snap["v"]), r(snap["w"]),
-        r(snap["P"]), r(snap["T"]),
-        r(snap["q_v"]), r(qcloud), r(snap["S_w"]),
+        r("u"), r("v"), r("w"), r("P"), r("T"),
+        r("q_v"), qcloud, r("q_r"), r("q_s"), r("q_g"), r("q_h"), r("S_w"),
     ])
 
 

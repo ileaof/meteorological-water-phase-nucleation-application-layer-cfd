@@ -24,6 +24,7 @@ def _fake_snapshot(grid, t):
         "u": 0.1 * ones, "v": 0.2 * ones, "w": 0.3 * ones,
         "P": 1.0e5 * ones, "T": 290.0 * ones,
         "q_v": 1e-2 * ones, "q_l": 1e-4 * ones, "q_i": 2e-4 * ones,
+        "q_r": 5e-4 * ones, "q_s": 6e-4 * ones, "q_g": 7e-4 * ones, "q_h": 8e-4 * ones,
         "S_w": 1.05 * ones,
     }
 
@@ -47,7 +48,7 @@ def test_tecplot_structure_and_zone_count():
             text = fh.read()
         lines = text.splitlines()
     assert lines[0].startswith('TITLE =')
-    assert lines[1].startswith('VARIABLES =') and lines[1].count('"') == 2 * 11
+    assert lines[1].startswith('VARIABLES =') and lines[1].count('"') == 2 * 15
     zone_hdrs = [ln for ln in lines if ln.startswith("ZONE")]
     assert len(zone_hdrs) == 3                                  # one zone per snapshot
     for z, t in zip(zone_hdrs, (0.0, 10.0, 20.0)):
@@ -69,10 +70,13 @@ def test_tecplot_fortran_order_and_values():
     # first two nodes differ in X only (I varies fastest): xc=[500,1500,2500]
     assert np.isclose(rows[0, 0], 500.0) and np.isclose(rows[1, 0], 1500.0)
     assert np.isclose(rows[0, 1], rows[1, 1])     # same Y
-    # U,V,W and q_cloud (=q_l+q_i=3e-4) columns
+    # column order: X0 Y1 Z2 U3 V4 W5 P6 T7 qv8 qcloud9 qr10 qs11 qg12 qh13 Sw14
     assert np.allclose(rows[:, 3], 0.1) and np.allclose(rows[:, 5], 0.3)
-    assert np.allclose(rows[:, 9], 3e-4)          # q_cloud
-    assert rows.shape == (3 * 2 * 2, 11)
+    assert np.allclose(rows[:, 9], 3e-4)          # q_cloud = q_l+q_i
+    assert np.allclose(rows[:, 10], 5e-4)         # q_rain
+    assert np.allclose(rows[:, 13], 8e-4)         # q_hail
+    assert np.allclose(rows[:, 14], 1.05)         # S_w
+    assert rows.shape == (3 * 2 * 2, 15)
 
 
 def test_cli_tecplot_flag_adds_format():

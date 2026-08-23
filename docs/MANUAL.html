@@ -1209,8 +1209,8 @@ meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resoluti
 <code>outputs/&lt;run&gt;/flow.dat</code> &mdash; a Tecplot 360 ASCII file with one structured
 <code>ORDERED</code>/<code>DATAPACKING=POINT</code> zone per snapshot, all zones sharing <code>STRANDID=1</code>
 with a per-zone <code>SOLUTIONTIME</code> so Tecplot plays the run as an animation. Variables (SI units in
-brackets): <code>X,Y,Z, U,V,W, Pressure, Temperature, q_v, q_cloud (=q_l+q_i), S_w</code>, node-ordered with the
-I&nbsp;(x) index varying fastest. The dialect matches <code>py2tec</code> and is read by Tecplot&nbsp;360 and
+brackets): <code>X,Y,Z, U,V,W, Pressure, Temperature, q_v, q_cloud (=q_l+q_i), q_rain, q_snow, q_graupel,
+q_hail, S_w</code>, node-ordered with the I&nbsp;(x) index varying fastest. The dialect matches <code>py2tec</code> and is read by Tecplot&nbsp;360 and
 ParaView. It is written alongside <code>flow.nc</code> and its write is guarded, so a failure never discards
 <code>summary.json</code>/<code>history.csv</code>. ASCII is large at high resolution &mdash; pair it with a coarse
 <code>--output-interval</code> (fewer time slices) for big grids.</p>

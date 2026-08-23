@@ -328,6 +328,9 @@ class Simulation:
         self._last_res = 0.0; self._last_iters = 0
         duration = cfg.time.duration
         interval = max(1, cfg.output.interval_steps)
+        # progress cadence is DECOUPLED from the output cadence: a large
+        # --output-interval (to keep flow.nc small) must not hide the progress.
+        prog_every = max(1, min(interval, 10))
         # initial snapshot
         nf0 = self._evaluate_nucleation(0.0)
         self.last_nf = nf0
@@ -350,7 +353,7 @@ class Simulation:
                 self.last_nf = nf
                 self._record(nf, initial)
                 self._maybe_output(nf)
-            if progress and (self.step % max(1, interval) == 0):
+            if progress and (self.step % prog_every == 0):
                 progress(self.t, duration, self.step)
         # finalise outputs
         report = self._finalise(initial, max_cfl)

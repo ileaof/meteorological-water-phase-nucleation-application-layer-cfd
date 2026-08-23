@@ -122,8 +122,18 @@ def main(argv=None) -> int:
     if args.dry_run:
         return _dry_run(cfg)
 
+    import time as _time
+    _t0 = _time.perf_counter()
+
     def _prog(t, dur, step):
-        print(f"  step {step:5d}  t={t:7.2f}/{dur:.1f}s")
+        el = _time.perf_counter() - _t0
+        sps = step / el if el > 0 else 0.0
+        frac = (t / dur) if dur > 0 else 0.0
+        # ETA from the simulated-time progress rate (robust to a varying dt)
+        eta_min = ((dur - t) * (el / t) / 60.0) if t > 1e-9 and el > 0 else float("inf")
+        print("  step %5d  t=%7.1f/%.0fs (%4.1f%%)  wall=%6.1fs  %4.2f steps/s  "
+              "ETA~%5.1f min" % (step, t, dur, 100 * frac, el, sps, eta_min),
+              flush=True)
 
     sim = Simulation(cfg, restart=args.restart)
     report = sim.run(progress=_prog)

@@ -4,11 +4,12 @@ Qualifiers (masks over the grid) follow the spec's list: vapor subsaturation,
 liquid/ice supersaturation, droplet / ice-crystal nucleation, supercooled
 liquid, mixed phase, cloud, and rain/snow/graupel/hail *favorability*.
 
-IMPORTANT (scientific integrity): rain/snow/graupel/hail are reported as
-**thermodynamic / microphysical favorability** diagnostics, NOT predictions of
-precipitation.  Hydrometeor growth (collision-coalescence, riming, accretion,
-melting) is not modelled in Batch 1 (and is an optional Batch-2 extension); a
-high nucleation rate never by itself implies rain or hail.
+IMPORTANT (scientific integrity): in the one-way stage rain/snow/graupel/hail are
+reported as **thermodynamic / microphysical favorability** diagnostics, NOT
+predictions of precipitation -- a high nucleation rate never by itself implies
+rain or hail.  The two-way stage (`precip_microphysics`) does model hydrometeor
+growth (condensation/deposition, autoconversion, accretion, riming, melting) and
+sedimentation, so precipitation forms -- qualitatively at demonstration resolution.
 """
 from __future__ import annotations
 
@@ -52,6 +53,55 @@ def vertical_velocity_center(state: FlowState) -> np.ndarray:
     return 0.5 * (state.w[:, :, :-1] + state.w[:, :, 1:])
 
 
+def surface_water_kg(state: FlowState) -> float:
+    """Accumulated surface precipitation as a water mass [kg].
+
+    ``surface_precip[c]`` is [kg/m^2] over (x,y); times the cell footprint dx*dy
+    and summed gives the mass that has left the airborne field via sedimentation.
+    """
+    sp = getattr(state, "surface_precip", None)
+    if not sp:
+        return 0.0
+    g = state.grid
+    area = g.dx * g.dy
+    return float(sum(np.asarray(v).sum() for v in sp.values()) * area)
+
+
+def total_water_kg(state: FlowState) -> float:
+    """Complete water inventory [kg]: airborne (vapour + all hydrometeors) plus
+    the water already accumulated at the surface.  Sedimentation moves water from
+    airborne to surface, so the SUM is what a closed domain should conserve."""
+    return float(state.total_water()) + surface_water_kg(state)
+
+
+def mass_continuity_residual(state: FlowState, rho0_c=None, rho0_wface=None) -> dict:
+    """Interior residual of the (an)elastic mass constraint.
+
+    Anelastic (rho0_c, rho0_wface given): max |div(rho0 u)| over interior cells,
+    normalised by a characteristic mass-flux-divergence scale.  Boussinesq
+    (rho0_* None): max |div u|.  Small values confirm the projection enforces the
+    core's continuity constraint (mass conservation), not the limiters.
+    """
+    g = state.grid
+    if rho0_c is not None and rho0_wface is not None:
+        rc = np.asarray(rho0_c).reshape(1, 1, -1)
+        rwf = np.asarray(rho0_wface).reshape(1, 1, -1)
+        dudx = (state.u[1:] - state.u[:-1]) / g.dx
+        dvdy = (state.v[:, 1:] - state.v[:, :-1]) / g.dy
+        wflux = rwf * state.w
+        dwdz = (wflux[:, :, 1:] - wflux[:, :, :-1]) / g.dz
+        div = rc * (dudx + dvdy) + dwdz
+        wmax = float(np.max(np.abs(state.w))) if state.w.size else 0.0
+        scale = float(np.max(np.abs(rho0_c))) * wmax / g.dz + 1e-12
+    else:
+        div = g.divergence(state.u, state.v, state.w)
+        umax = float(np.max(np.abs(state.velocity_magnitude_center())))
+        scale = umax / min(g.dx, g.dy, g.dz) + 1e-12
+    interior = div[1:-1, 1:-1, 1:-1] if min(div.shape) > 2 else div
+    absmax = float(np.max(np.abs(interior))) if interior.size else 0.0
+    return {"abs_max": absmax, "normalised": absmax / scale}
+
+
 def summary_stats(state: FlowState, nf: NucleationField) -> dict:
     """Extrema and aggregate metrics for the JSON report."""
     umag = state.velocity_magnitude_center()
@@ -83,7 +133,7 @@ def conservation_budgets(state: FlowState, initial: dict, rho0: float) -> dict:
     """
     g = state.grid
     dv = g.cell_vol
-    tw = float((state.qv + state.ql + state.qi).sum() * dv)
+    tw = total_water_kg(state)          # airborne (all species) + surface accumulation
     ke = 0.5 * rho0 * float((state.u ** 2).sum() * (g.dx * g.dy * g.dz)
                            + (state.v ** 2).sum() * (g.dx * g.dy * g.dz)
                            + (state.w ** 2).sum() * (g.dx * g.dy * g.dz))
@@ -102,7 +152,7 @@ def conservation_budgets(state: FlowState, initial: dict, rho0: float) -> dict:
 def initial_budgets(state: FlowState, rho0: float) -> dict:
     g = state.grid
     dv = g.cell_vol
-    tw = float((state.qv + state.ql + state.qi).sum() * dv)
+    tw = total_water_kg(state)          # airborne (all species) + surface accumulation
     ke = 0.5 * rho0 * float((state.u ** 2).sum() + (state.v ** 2).sum() + (state.w ** 2).sum()) * dv
     zc = g.zc.reshape(1, 1, -1)
     pe = rho0 * 9.81 * float((zc * np.ones(g.center_shape)).sum() * dv)
@@ -114,7 +164,10 @@ def initial_budgets(state: FlowState, rho0: float) -> dict:
 __all__ = [
     "conservation_budgets",
     "initial_budgets",
+    "mass_continuity_residual",
     "qualifiers",
     "summary_stats",
+    "surface_water_kg",
+    "total_water_kg",
     "vertical_velocity_center",
 ]

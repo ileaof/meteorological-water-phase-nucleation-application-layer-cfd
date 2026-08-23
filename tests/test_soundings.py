@@ -78,23 +78,27 @@ def test_from_arrays_with_RH():
 
 
 def test_reference_state_equilibrium():
-    """The reference state (no perturbation, no microphysics) must not spin up a
-    storm.  A residual spurious circulation develops from diffusing the curved
-    base state (~0.2 m/s at fine resolution, ~1 m/s at this coarse grid) -- a
-    documented imbalance to be reduced by diffusing perturbations only (M3/M4).
-    Here we only require no runaway: velocities << a real storm's 10-40 m/s."""
-    cfg = apply_overrides(SimulationConfig(), storm_scale=True)
-    cfg.domain.Lz = 16000.0
-    cfg.grid.nx = cfg.grid.ny = 12
-    cfg.grid.nz = 30
-    cfg.physics.bubble_dtheta = 0.0                     # NO perturbation
-    cfg.nucleation.stage = "none"                       # dynamics-only
-    cfg.time.duration = 120.0
-    cfg.output.format = []; cfg.output.figures = []; cfg.output.restart = False
-    cfg.output.outdir = "outputs/_test_eq"
-    g = Grid(nx=12, ny=12, nz=30, Lx=cfg.domain.Lx, Ly=cfg.domain.Ly, Lz=cfg.domain.Lz)
-    sim = Simulation(cfg, base=weisman_klemp(g))
-    assert float(np.max(np.abs(sim.state.velocity_magnitude_center()))) == 0.0
-    rep = sim.run()
-    assert rep["final_stats"]["umax"] < 2.0            # no spurious storm (residual ~1 m/s)
-    assert rep["final_stats"]["wmax"] < 2.0
+    """The stratified reference state (no perturbation, no microphysics) must be a
+    true DISCRETE equilibrium: it stays exactly at rest.  This holds because M4
+    (a) diffuses only the perturbation theta'=theta-theta0 and (b) preserves
+    theta0(z)/qv0(z) at the z-boundaries (zero-gradient on the perturbation).
+    Without those, diffusing / zero-gradient-copying the curved base profile
+    injects a phantom theta' -> spurious buoyancy -> a ~1 m/s circulation even at
+    rest, which the limiters would then have to suppress.  Exact rest confirms the
+    limiters are NOT propping up the solution."""
+    for dynamics in ("boussinesq", "anelastic"):
+        cfg = apply_overrides(SimulationConfig(), storm_scale=True, dynamics=dynamics)
+        cfg.domain.Lz = 16000.0
+        cfg.grid.nx = cfg.grid.ny = 12
+        cfg.grid.nz = 30
+        cfg.physics.bubble_dtheta = 0.0                 # NO perturbation
+        cfg.nucleation.stage = "none"                   # dynamics-only
+        cfg.time.duration = 120.0
+        cfg.output.format = []; cfg.output.figures = []; cfg.output.restart = False
+        cfg.output.outdir = "outputs/_test_eq"
+        g = Grid(nx=12, ny=12, nz=30, Lx=cfg.domain.Lx, Ly=cfg.domain.Ly, Lz=cfg.domain.Lz)
+        sim = Simulation(cfg, base=weisman_klemp(g))
+        assert float(np.max(np.abs(sim.state.velocity_magnitude_center()))) == 0.0
+        rep = sim.run()
+        assert rep["final_stats"]["umax"] < 1e-6, dynamics    # exact discrete rest
+        assert rep["final_stats"]["wmax"] < 1e-6, dynamics

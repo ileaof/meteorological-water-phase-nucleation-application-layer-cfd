@@ -78,7 +78,7 @@ def _deep_convection_initial(grid: Grid, cfg: SimulationConfig, base=None) -> Fl
     state.qv = np.maximum(qv0 + dqv, 0.0)
     state.p0_field = base.field(base.p0, grid.center_shape)
     bc.apply_velocity_bcs(state, grid, cfg)
-    bc.apply_scalar_bcs(state, grid, cfg)
+    bc.apply_scalar_bcs(state, grid, cfg, theta0=theta0, qv0=qv0)
     state.diagnose(cfg)
     return state
 
@@ -244,9 +244,10 @@ class Simulation:
         g = self.grid
         st = self.state
         order = cfg.flow.advection_order
-        # 1. BCs + diagnose
+        # 1. BCs + diagnose.  For the stratified base state the scalar z-BCs
+        # preserve theta0(z)/qv0(z) (zero-gradient on the perturbation).
         bc.apply_velocity_bcs(st, g, cfg)
-        bc.apply_scalar_bcs(st, g, cfg)
+        bc.apply_scalar_bcs(st, g, cfg, theta0=self.theta0_field, qv0=self.qv0_field)
         st.diagnose(cfg)
         # 2. momentum predictor.  (v1 simplification, documented): advective
         # transport of momentum is deferred -- the velocity is governed by the
@@ -307,11 +308,13 @@ class Simulation:
             st.qs = np.maximum(adv.advect_center(st.qs, Uc, Vc, Wc, g, dt, order), 0.0)
             st.qg = np.maximum(adv.advect_center(st.qg, Uc, Vc, Wc, g, dt, order), 0.0)
             st.qh = np.maximum(adv.advect_center(st.qh, Uc, Vc, Wc, g, dt, order), 0.0)
-        st.theta = dif.diffuse_center(st.theta, g, cfg.flow.kappa, dt)
-        st.qv = dif.diffuse_center(st.qv, g, cfg.flow.kappa, dt)
+        # perturbation-only diffusion vs the stratified reference (deep_convection):
+        # diffusing the full curved theta0(z)/qv0(z) would inject spurious buoyancy.
+        st.theta = dif.diffuse_center(st.theta, g, cfg.flow.kappa, dt, base=self.theta0_field)
+        st.qv = dif.diffuse_center(st.qv, g, cfg.flow.kappa, dt, base=self.qv0_field)
         st.qv = np.maximum(st.qv, 0.0)
         # 5. scalar BCs + diagnose (velocity already div-free from step 3)
-        bc.apply_scalar_bcs(st, g, cfg)
+        bc.apply_scalar_bcs(st, g, cfg, theta0=self.theta0_field, qv0=self.qv0_field)
         bc.apply_velocity_bcs(st, g, cfg)
         st.diagnose(cfg)
         # 6. two-way microphysics: growth/conversion + embryo source + latent-heat
@@ -321,7 +324,7 @@ class Simulation:
             self.coupler.apply(st, g, dt, nf=nf)
             self.coupler.sediment(st, g, dt)
             self.coupler.zero_inflow_hydrometeors(st)
-            bc.apply_scalar_bcs(st, g, cfg)
+            bc.apply_scalar_bcs(st, g, cfg, theta0=self.theta0_field, qv0=self.qv0_field)
             st.diagnose(cfg)
             # deep-column safety: keep T inside the physical/correlation range so
             # a transient numerical overshoot cannot corrupt the saturation
@@ -488,6 +491,23 @@ class Simulation:
         report["memory_estimate_gb"] = _mem(cfg)
         report["precision"] = cfg.physics.precision
         report["dynamics"] = self.dynamics
+        # M4 conservation: the (an)elastic mass-continuity residual (should be
+        # ~0 -> the projection, not the limiters, enforces the constraint) and the
+        # complete water budget (all species + surface accumulation).
+        mres = diag.mass_continuity_residual(
+            self.state,
+            rho0_c=self.rho0_c if self.dynamics == "anelastic" else None,
+            rho0_wface=self.rho0_wface if self.dynamics == "anelastic" else None)
+        report["conservation"] = {
+            "mass_continuity_residual_abs": mres["abs_max"],
+            "mass_continuity_residual_norm": mres["normalised"],
+            "total_water_rel_err": bud["total_water_rel_err"],
+            "total_energy_rel_err": bud["total_energy_rel_err"],
+            "water_measure": "airborne(all species)+surface accumulation",
+            "note": ("water/energy are conserved to discretization error only in a "
+                     "closed domain; boundary flux (top outflow / damping) is the "
+                     "expected non-conservation channel."),
+        }
         report["cfl_limiter_last"] = getattr(self, "_dt_limiter", None)
         report["n_dt_reductions"] = getattr(self, "_n_dt_reductions", 0)
         if getattr(self.state, "surface_precip", None) is not None:
@@ -500,6 +520,11 @@ class Simulation:
         # guarded (io.write_netcdf), so the summary/history above always survive.
         if "netcdf" in cfg.output.format and self.snapshots:
             fio.write_netcdf(self.snapshots, os.path.join(outdir, "flow.nc"), self.grid, attrs)
+        # Tecplot 360 ASCII (.dat): one ORDERED/POINT zone per snapshot, STRANDID
+        # time animation.  Guarded like the NetCDF write.
+        if "tecplot" in cfg.output.format and self.snapshots:
+            fio.write_tecplot(self.snapshots, os.path.join(outdir, "flow.dat"), self.grid,
+                              attrs, title="meteorological_flow storm t<=%.0fs" % self.t)
         return report
 
     def _global_attrs(self) -> dict:

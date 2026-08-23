@@ -11,6 +11,10 @@ horizontal x-y slice of ``w`` at mid-height showing the updraft cell(s).
     python examples/visualize_convection.py --duration 900 --grid 20 --streamlines
     python examples/visualize_convection.py --out outputs/conv    # PNGs -> outputs/conv/
 
+    # match a deep anelastic storm run (same grid/Lz/core):
+    python examples/visualize_convection.py --streamlines --grid 24 --Nz 45 \
+        --Lz 18000 --dynamics anelastic --duration 600 --out outputs/storm_anelastic_viz
+
 The figures are written as PNGs (headless Agg backend); the run also writes
 ``flow.nc`` which can be animated in ncview / ParaView / xarray.
 """
@@ -108,6 +112,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--duration", type=float, default=400.0)
     ap.add_argument("--grid", type=int, default=16, help="nx=ny (nz scaled for the column)")
+    ap.add_argument("--Nz", type=int, default=None, help="vertical cells (overrides the scaled default)")
+    ap.add_argument("--Lz", type=float, default=None, help="domain top [m] (overrides the preset)")
+    ap.add_argument("--dynamics", choices=("anelastic", "boussinesq"), default=None,
+                    help="dynamical core (match your run; default = the storm preset's boussinesq)")
     ap.add_argument("--out", default="outputs/convection_viz")
     ap.add_argument("--streamlines", action="store_true",
                     help="draw the circulation as streamlines (streamplot) instead "
@@ -122,9 +130,11 @@ def main(argv=None) -> int:
         cfg.domain.Lz = 1500.0
         cfg.nucleation.stage = "hydrometeor"
     else:
-        cfg = apply_overrides(SimulationConfig(), storm_scale=True)
+        cfg = apply_overrides(SimulationConfig(), storm_scale=True, dynamics=args.dynamics)
         cfg.grid.nx = cfg.grid.ny = args.grid
-        cfg.grid.nz = max(24, int(args.grid * 1.6))
+        cfg.grid.nz = args.Nz if args.Nz is not None else max(24, int(args.grid * 1.6))
+        if args.Lz is not None:
+            cfg.domain.Lz = float(args.Lz)
     cfg.time.duration = args.duration
     cfg.output.outdir = args.out
     cfg.output.format = ["netcdf", "json"]        # flow.nc for external tools
@@ -132,9 +142,10 @@ def main(argv=None) -> int:
     cfg.output.restart = False
     cfg.output.interval_steps = 999999
 
-    print("Running %s (%dx%dx%d, %.0f s) ..." % (
+    print("Running %s [%s core] (%dx%dx%d, Lz=%.0f m, %.0f s) ..." % (
         "storm-scale convection" if not args.no_storm else "mixing chamber",
-        cfg.grid.nx, cfg.grid.ny, cfg.grid.nz, cfg.time.duration))
+        cfg.physics.dynamics, cfg.grid.nx, cfg.grid.ny, cfg.grid.nz,
+        cfg.domain.Lz, cfg.time.duration))
     sim = Simulation(cfg)
     sim.run()
     st = sim.state

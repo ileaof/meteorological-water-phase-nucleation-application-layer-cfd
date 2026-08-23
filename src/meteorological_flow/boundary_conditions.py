@@ -71,8 +71,18 @@ def apply_velocity_bcs(state: FlowState, grid: Grid, cfg: SimulationConfig) -> N
             state.w[:, :, -1 - d] *= (1.0 - 0.05 * coeff)
 
 
-def apply_scalar_bcs(state: FlowState, grid: Grid, cfg: SimulationConfig) -> None:
-    """Enforce scalar (theta, q_v, q_l, q_i) boundary conditions in place."""
+def apply_scalar_bcs(state: FlowState, grid: Grid, cfg: SimulationConfig,
+                     theta0=None, qv0=None) -> None:
+    """Enforce scalar (theta, q_v, q_l, q_i) boundary conditions in place.
+
+    ``theta0``/``qv0`` are the stratified base-state fields (deep_convection).
+    When given, the vertical boundaries apply zero-gradient to the PERTURBATION
+    (theta - theta0), preserving theta0(z)/qv0(z) at the top and bottom.  Plain
+    zero-gradient on the total field would force theta(top)=theta(top-1), which
+    differs from theta0(top) by the base-state lapse and injects a spurious
+    boundary perturbation -> phantom buoyancy even at rest.  The x/y walls need
+    no such treatment: theta0 depends only on z, so it has no horizontal gradient.
+    """
     b = cfg.boundaries
     P0 = cfg.physics.P0
     th_w, qv_w = inflow_state(b.warm_inflow, P0)
@@ -101,11 +111,20 @@ def apply_scalar_bcs(state: FlowState, grid: Grid, cfg: SimulationConfig) -> Non
         state.theta[:, -1, :] = state.theta[:, -2, :]
         state.qv[:, 0, :] = state.qv[:, 1, :]
         state.qv[:, -1, :] = state.qv[:, -2, :]
-    # z: bottom & top zero-gradient for scalars (open top lets moisture exit)
-    state.theta[:, :, 0] = state.theta[:, :, 1]
-    state.theta[:, :, -1] = state.theta[:, :, -2]
-    state.qv[:, :, 0] = state.qv[:, :, 1]
-    state.qv[:, :, -1] = state.qv[:, :, -2]
+    # z: bottom & top.  Stratified base -> zero-gradient on the perturbation
+    # (preserve theta0(z)/qv0(z)); otherwise zero-gradient on the total field.
+    if theta0 is not None:
+        state.theta[:, :, 0] = theta0[:, :, 0] + (state.theta[:, :, 1] - theta0[:, :, 1])
+        state.theta[:, :, -1] = theta0[:, :, -1] + (state.theta[:, :, -2] - theta0[:, :, -2])
+    else:
+        state.theta[:, :, 0] = state.theta[:, :, 1]
+        state.theta[:, :, -1] = state.theta[:, :, -2]
+    if qv0 is not None:
+        state.qv[:, :, 0] = np.maximum(qv0[:, :, 0] + (state.qv[:, :, 1] - qv0[:, :, 1]), 0.0)
+        state.qv[:, :, -1] = np.maximum(qv0[:, :, -1] + (state.qv[:, :, -2] - qv0[:, :, -2]), 0.0)
+    else:
+        state.qv[:, :, 0] = state.qv[:, :, 1]
+        state.qv[:, :, -1] = state.qv[:, :, -2]
     # periodic y (option): copy slabs to make the field periodic for the
     # one-sided operators' boundary rows
     if b.y == "periodic":

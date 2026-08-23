@@ -12,11 +12,22 @@ from .grid import Grid
 from .state import FlowState
 
 
-def diffuse_center(s: np.ndarray, grid: Grid, kappa: float, dt: float) -> np.ndarray:
-    """s + dt * kappa * laplacian(s)."""
+def diffuse_center(s: np.ndarray, grid: Grid, kappa: float, dt: float,
+                   base: np.ndarray | None = None) -> np.ndarray:
+    """s + dt * kappa * laplacian(s').
+
+    If ``base`` (a reference profile field, e.g. theta0(z) or qv0(z)) is given,
+    only the PERTURBATION ``s' = s - base`` is diffused and the reference state is
+    left untouched.  Diffusing the full field would apply kappa*laplacian to the
+    curved base profile, injecting a spurious source (for a stratified sounding
+    this manufactures theta' != 0 -> spurious buoyancy -> a phantom circulation
+    even at rest).  Diffusing the perturbation only removes that artefact, so the
+    reference state is a true discrete equilibrium.
+    """
     if kappa <= 0.0 or dt <= 0.0:
         return s
-    return s + dt * kappa * grid.laplacian(s)
+    field = s if base is None else (s - base)
+    return s + dt * kappa * grid.laplacian(field)
 
 
 def _center_to_faces(tend_c: np.ndarray, grid: Grid, axis: int) -> np.ndarray:

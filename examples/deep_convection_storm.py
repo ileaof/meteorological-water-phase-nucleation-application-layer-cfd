@@ -63,8 +63,11 @@ def main(argv=None) -> int:
     ap.add_argument("--duration", type=float, default=600.0, help="simulated seconds")
     ap.add_argument("--bubble", type=float, default=3.0, help="warm-bubble dtheta [K] (> CIN barrier)")
     ap.add_argument("--shear", type=float, default=0.0,
-                    help="0-6 km unidirectional wind shear [m/s] (organises convection; "
-                         "coarse grid resolves it only crudely)")
+                    help="0-6 km unidirectional wind shear [m/s]. NOTE: this sets the "
+                         "reference sounding's environmental wind (reported in the "
+                         "diagnostics) but the closed-wall storm domain does not yet "
+                         "advect the mean wind -- ingesting it needs open/periodic "
+                         "lateral BCs (an M4/M5 item). It does not organise this run.")
     ap.add_argument("--qv-sfc", type=float, default=0.014, dest="qv_sfc",
                     help="surface vapour mixing ratio [kg/kg] (moisture -> CAPE)")
     ap.add_argument("--dynamics", choices=("anelastic", "boussinesq"), default="anelastic")
@@ -82,8 +85,9 @@ def main(argv=None) -> int:
           % (args.Lx, args.Lx, args.Lz, args.N, args.N, args.Nz, g.dx, g.dz))
     print("  CAPE / CIN  : %.0f / %.0f J/kg" % (d["CAPE_J_kg"], d["CIN_J_kg"]))
     print("  LCL/LFC/EL  : %s / %s / %s" % (_fmt(d["LCL_m"]), _fmt(d["LFC_m"]), _fmt(d["EL_m"])))
-    print("  freezing lvl: %s        0-6 km shear: %.1f m/s"
-          % (_fmt(d["freezing_level_m"]), d["shear_0_6km_m_s"]))
+    print("  freezing lvl: %s        0-6 km shear: %.1f m/s%s"
+          % (_fmt(d["freezing_level_m"]), d["shear_0_6km_m_s"],
+             "  (sounding only; not advected -- see --shear)" if args.shear else ""))
     print("  parcel theory: w_max = sqrt(2 CAPE) = %.0f m/s  (thermodynamic ceiling;"
           % w_parcel)
     print("                 real updrafts reach ~40-60%% of this after entrainment,")
@@ -161,8 +165,8 @@ def main(argv=None) -> int:
           % ("OK" if ok_top else "--"))
     print("  Note: qualitative deep-convection demonstration (coarse grid; "
           "entrainment / cold pool / rotation only crudely resolved).")
-    print("        For longer, moister, more organised storms increase "
-          "--duration, --qv-sfc and --shear.")
+    print("        For a longer, moister storm increase --duration and --qv-sfc. "
+          "(--shear sets the sounding wind but is not yet advected; see --shear.)")
     print("\nSummary -> %s/summary.json" % args.output)
     return 0
 

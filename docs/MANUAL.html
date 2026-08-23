@@ -1032,7 +1032,9 @@ met_h2o_nucleation.py              BACKWARD-COMPAT SHIM (repo root) — delegate
   It simulates a 100 m mixing chamber — warm/humid west inflow, cold/dry east inflow, a uniform pressure drop,
   gravity along −z — and evaluates the second-order nucleation kernel one-way (diagnostic) over the mixing zone.
   The engine is treated read-only; the flow layer only feeds the kernel <code>(T, P, p_v, |∇T|)</code> and reads
-  its outputs. Two-way microphysics is a gated Batch-2 extension; Batch 1 stops at the one-way verification gate.</p>
+  its outputs. Two-way microphysics (hydrometeor growth + latent-heat feedback + sedimentation) was the gated
+  Batch-2 extension and is now implemented — see Part&nbsp;III and §28; this Part II describes the one-way chamber
+  foundation that passed the verification gate.</p>
 </div>
 
 <section id="s21">
@@ -1071,8 +1073,12 @@ pressure drop driving a gentle through-flow, gravity along −z, and one-way nuc
 <section id="s22">
 <h2><span class="num">§22</span>Formulation</h2>
 <h3>22.1 Boussinesq, staggered Arakawa C-grid</h3>
-<p>Density variations enter <strong>only through buoyancy</strong>; the prognostic velocity is incompressible
-(projected each step). Scalars — potential temperature θ, vapour <code>q_v</code>, liquid <code>q_l</code>,
+<p>In the default <strong>Boussinesq</strong> core, density variations enter <strong>only through buoyancy</strong>;
+the prognostic velocity is incompressible (∇·<strong>u</strong>=0, projected each step). The
+<strong>anelastic</strong> core (<code>--dynamics anelastic</code>, §28.7) instead carries a height-dependent
+reference density ρ<sub>0</sub>(z) and projects onto ∇·(ρ<sub>0</sub><strong>u</strong>)=0, so deep-column mass
+expansion is represented; it is the recommended core for the deep-convection scenario, with Boussinesq kept as the
+validated test mode. Scalars — potential temperature θ, vapour <code>q_v</code>, liquid <code>q_l</code>,
 ice <code>q_i</code>, perturbation pressure <code>p'</code> — live at cell centres; <code>u, v, w</code> on the
 east/north/top faces. z is vertical (gravity −z). Grid metrics and operators (divergence, face gradients, centred
 gradients, Laplacian, centre→face interpolation) are plain numpy finite differences (<code>grid.py</code>).</p>
@@ -1153,15 +1159,18 @@ interpolation is defined everywhere (a documented parameterization).</p>
 </section>
 <section id="s24">
 <h2><span class="num">§24</span>Documented consequences &amp; limitations</h2>
-<p class="lead-in">These are not bugs; they are the honest scope of a Batch-1 demonstration-scale solver. The <code>summary.json</code> report carries this list verbatim.</p>
+<p class="lead-in">These are not bugs; they are the honest scope of a demonstration-scale solver. Several items are
+<strong>stage- and core-dependent</strong> — the one-way (diagnostic) stage, the two-way microphysics stage
+(<code>--two-way-coupling</code> / <code>--storm-scale</code>) and the Boussinesq vs anelastic core differ, and this is
+called out per item below. The <code>summary.json</code> report carries the applicable list verbatim for each run.</p>
 <div class="callout">
 <ol>
-<li><strong>Boussinesq</strong>: the imposed <code>ΔP = 30 Pa</code> over 70000 Pa gives adiabatic expansion cooling ~0.1 K — second-order. Supersaturation is dominated by <strong>mixing</strong> and <strong>buoyant lifting</strong>, not by the pressure drop itself. A low-Mach/compressible solver is future work.</li>
-<li><strong>One-way (Batch 1)</strong>: nucleation is diagnostic; the prognostic state is not modified by microphysics. Two-way coupling is a gated Batch-2 step.</li>
+<li><strong>Dynamical core</strong>: in the mixing-chamber scenario the imposed <code>ΔP = 30 Pa</code> over 70000 Pa gives adiabatic expansion cooling ~0.1 K — second-order. Supersaturation is dominated by <strong>mixing</strong> and <strong>buoyant lifting</strong>, not by the pressure drop itself. For the deep-convection scenario the <strong>anelastic core</strong> (<code>--dynamics anelastic</code>) carries ρ<sub>0</sub>(z) and enforces ∇·(ρ<sub>0</sub><strong>u</strong>)=0; a fully compressible / low-Mach acoustic core remains future work (not needed for the anelastic soundproof regime).</li>
+<li><strong>Coupling stage</strong>: in the <strong>one-way</strong> stage nucleation is diagnostic — the prognostic state is not modified by microphysics. The <strong>two-way</strong> stage (<code>--two-way-coupling</code> / <code>--storm-scale</code>, Increment&nbsp;2) is implemented: hydrometeors form, latent heat feeds back on θ and the precipitating species sediment. Which stage runs is set by <code>--one-way-coupling</code> / <code>--two-way-coupling</code> (see §28).</li>
 <li><strong><code>|∇T|</code> floored at <code>gmin</code></strong>: the <code>|∇T| → 0</code> limit is the kernel's near-equilibrium result (parameterization), <strong>not</strong> the CNT limit. The CFD Cartesian <code>|∇T|</code> is identified with the kernel's radial <code>|dT/dr|</code> as a first-order subgrid closure (validation test 14 checks the limit).</li>
 <li><strong>Momentum advection deferred</strong> (v1 simplification): the velocity is governed by the body force + buoyancy + diffusion + projection; the <strong>scalars</strong> are advected by the resulting divergence-free velocity (which drives the mixing → supersaturation → nucleation). Fully conservative staggered momentum advection is a Batch-2 upgrade. The projection still enforces <code>∇·u ≈ 0</code>.</li>
 <li><strong>Rayleigh momentum drag</strong> <code>γ = 0.2 /s</code> is a documented bulk subgrid dissipation that bounds the otherwise-unbounded Boussinesq buoyant convection (warm parcels do not cool on ascent, so without a sink the plume accelerates unboundedly). <code>γ = 0</code> disables it.</li>
-<li><strong>Rain/snow/graupel/hail</strong> are reported as thermodynamic / microphysical <strong>favorability</strong> diagnostics, <strong>not</strong> precipitation prediction. Hydrometeor growth (collision-coalescence, riming, melting) is not modelled in Batch 1; a high nucleation rate never by itself implies rain or hail.</li>
+<li><strong>Rain/snow/graupel/hail</strong>: in the bare kernel (one-way) these are thermodynamic / microphysical <strong>favorability</strong> diagnostics, <strong>not</strong> precipitation prediction — a high nucleation rate never by itself implies rain or hail. In the <strong>two-way</strong> stage the single-moment bulk scheme (<code>precip_microphysics</code>) <em>does</em> model hydrometeor growth (condensation/deposition, autoconversion, accretion, riming, melting) and sedimentation, so precipitation is produced; at demonstration resolution the amounts remain <strong>qualitative</strong>, and the evidence-based confidence/caveat still gate any precipitation claim.</li>
 <li><strong>Not operational weather prediction</strong>; demonstration-scale only.</li>
 </ol>
 </div>
@@ -1492,12 +1501,23 @@ max |w| = 43.3 m/s     T = 180.0 .. 335.0 K     max S_w = 1.74
 graupel) — about <strong>four orders of magnitude</strong> more than the shallow chamber's ~1.3e-4 mm — and it grows
 with run length. The updraft (~43 m/s) and mixed-phase partition are physically sensible for a continental deep
 convective cell.</p>
-<p class="callout"><span class="ct">Demonstration-scale caveat</span>Over a 10&ndash;12 km column the density varies
-by ~2&ndash;3&times;, beyond the strict Boussinesq range, and the grid is coarse (~0.5&ndash;1 km). The default storm
-scenario is therefore an <strong>idealised demonstration</strong> (Boussinesq-stretched), not a validated
-deep-convection result: updraft speeds, condensate loading and surface totals are indicative, not quantitative.
-Per-step latent heating, velocity and temperature are bounded as documented stability safeguards. Numbers scale up
-with a finer grid and a longer, moister run.</p>
+<p class="callout"><span class="ct">Demonstration-scale caveat</span>Over a 10&ndash;12 km column the density varies by
+~2&ndash;3&times;. The <strong>anelastic core</strong> (<code>--dynamics anelastic</code>, M3) now carries that
+&rho;<sub>0</sub>(z) variation explicitly, so the old &ldquo;beyond the strict Boussinesq range&rdquo; objection is
+addressed for the deep column; the default <code>--storm-scale</code> preset still runs the Boussinesq core (the
+validated test mode) unless <code>--dynamics anelastic</code> is passed. What keeps the run <strong>qualitative,
+not quantitative</strong> is the remaining, still-open work: the grid is coarse (~0.5&ndash;1 km, so entrainment /
+cold pool / rotation are only crudely resolved), the conservation and convergence criteria (M4&ndash;M8) are not yet
+demonstrated, and per-step latent heating, velocity and temperature are bounded as documented stability safeguards.
+Updraft speeds, condensate loading and surface totals are therefore indicative; they scale up with a finer grid and
+a longer, moister run.</p>
+<p class="note">The theory-complete qualitative storm (Weisman&ndash;Klemp sounding + anelastic core + deep domain +
+two-way microphysics, with the environment and parcel-theory anchors reported) is
+<code>examples/deep_convection_storm.py</code>. A representative anelastic run (CAPE&nbsp;2864&nbsp;J/kg) reaches an
+updraft of ~41&nbsp;m/s &mdash; about <strong>55% of the parcel ceiling</strong> <code>&radic;(2&middot;CAPE) &asymp; 76 m/s</code>,
+the physically expected fraction after entrainment and loading &mdash; with a cloud top near the equilibrium level
+(~12&ndash;16&nbsp;km, i.e. an overshooting top) and mixed-phase precipitation. Those bulk numbers are qualitatively
+correct; they are not a forecast.</p>
 
 <h3>28.7 Toward a quantitatively defensible core (milestone programme)</h3>
 <p>The storm demonstration is being evolved, milestone by milestone, into a defensible deep-convection simulation
@@ -1514,12 +1534,17 @@ correction as <code>u = u* &minus; (&Delta;t/&rho;<sub>0,face</sub>)&nabla;p&pri
 exactly and the mass-weighted continuity <code>&nabla;&middot;(&rho;<sub>0</sub>u)=0</code> is enforced with the cached
 factorisation &mdash; no extra cost over Boussinesq. Boussinesq remains the default validated test mode. The
 constraint reduces exactly to Boussinesq when &rho;<sub>0</sub> is constant (regression-tested).</p>
-<pre><code># compare the two cores on the same warm-bubble trigger:
+<pre><code># the theory-complete qualitative storm (WK sounding + anelastic + deep domain +
+# two-way microphysics; reports the environment and the parcel-theory anchors):
+python examples/deep_convection_storm.py --duration 720
+python examples/deep_convection_storm.py --shear 20 --qv-sfc 0.016 --duration 1200
+
+# compare the two dynamical cores on the same warm-bubble trigger:
 python examples/anelastic_vs_boussinesq.py --N 16 --Nz 40 --duration 180
 
-# an anelastic storm run:
+# an anelastic storm run straight from the CLI:
 python -m meteorological_flow.cli --storm-scale --dynamics anelastic \
-    --Nx 24 --Ny 24 --Nz 40 --duration 600 --output outputs/storm_anelastic --threads 8</code></pre>
+    --Nx 24 --Ny 24 --Nz 45 --Lz 18000 --duration 600 --output outputs/storm_anelastic --threads 8</code></pre>
 <p class="note">Physical signature (dry-bubble comparison): the anelastic updraft ratio <em>w</em><sub>anel</sub>/<em>w</em><sub>bouss</sub>
 rises with height and the plume penetrates ~1 km deeper, following the &rho;<sub>0</sub>(surface)/&rho;<sub>0</sub>(top) &asymp; 3.4&times;
 mass-expansion scale &mdash; the effect the constant-density core structurally misses.</p>

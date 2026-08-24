@@ -113,9 +113,10 @@ def advect_center(s, Uc, Vc, Wc, grid: Grid, dt: float, order: int = 1) -> np.nd
     Fx = _face_flux_x(s, Uf, grid, order)
     Fy = _face_flux_y(s, Vf, grid, order)
     Fz = _face_flux_z(s, Wf, grid, order)
+    dz = grid.dz if not grid.stretched else grid.dz_c[None, None, :]
     tend = -((Fx[1:, :, :] - Fx[:-1, :, :]) / grid.dx
              + (Fy[:, 1:, :] - Fy[:, :-1, :]) / grid.dy
-             + (Fz[:, :, 1:] - Fz[:, :, :-1]) / grid.dz)
+             + (Fz[:, :, 1:] - Fz[:, :, :-1]) / dz)
     return s + dt * tend
 
 
@@ -171,9 +172,10 @@ def advect_center_massflux(s, uf, vf, wf, grid: Grid, dt: float,
     Fx = rc * uf * sx
     Fy = rc * vf * sy
     Fz = rwf * wf * sz
+    dz = grid.dz if not grid.stretched else grid.dz_c[None, None, :]
     div = ((Fx[1:, :, :] - Fx[:-1, :, :]) / grid.dx
            + (Fy[:, 1:, :] - Fy[:, :-1, :]) / grid.dy
-           + (Fz[:, :, 1:] - Fz[:, :, :-1]) / grid.dz)
+           + (Fz[:, :, 1:] - Fz[:, :, :-1]) / dz)
     return s - dt * div / rc      # d(rho0 s)/dt = -div  ->  s -= dt div/rho0
 
 

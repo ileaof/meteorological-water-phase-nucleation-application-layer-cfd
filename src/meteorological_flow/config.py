@@ -25,6 +25,7 @@ class GridConfig:
     nx: int = 20
     ny: int = 20
     nz: int = 20
+    z_stretch: float = 1.0     # >1 clusters vertical levels near the surface (1=uniform)
 
 
 @dataclass
@@ -151,7 +152,8 @@ def from_dict(d: dict[str, Any]) -> SimulationConfig:
         Lz=float(_get(dom, "Lz", 100.0)))
     gr = _get(d, "grid", {})
     cfg.grid = GridConfig(nx=int(_get(gr, "nx", 20)), ny=int(_get(gr, "ny", 20)),
-                          nz=int(_get(gr, "nz", 20)))
+                          nz=int(_get(gr, "nz", 20)),
+                          z_stretch=float(_get(gr, "z_stretch", 1.0)))
     tm = _get(d, "time", {})
     cfg.time = TimeConfig(duration=float(_get(tm, "duration", 120.0)),
                           cfl=float(_get(tm, "cfl", 0.5)), dt_max=float(_get(tm, "dt_max", 0.25)))
@@ -357,6 +359,7 @@ def apply_overrides(cfg: SimulationConfig, *,
                    grid_resolution: int | None = None,
                    Lx: float | None = None, Ly: float | None = None, Lz: float | None = None,
                    Nx: int | None = None, Ny: int | None = None, Nz: int | None = None,
+                   z_stretch: float | None = None,
                    cfl: float | None = None, dt_max: float | None = None,
                    sgs: float | None = None,
                    pressure_drop: float | None = None,
@@ -414,6 +417,8 @@ def apply_overrides(cfg: SimulationConfig, *,
         cfg.grid.ny = int(Ny)
     if Nz is not None:
         cfg.grid.nz = int(Nz)
+    if z_stretch is not None:
+        cfg.grid.z_stretch = float(z_stretch)
     if cfl is not None:
         cfg.time.cfl = float(cfl)
     if dt_max is not None:

@@ -94,12 +94,18 @@ class MicrophysicsCoupler:
             rho = np.asarray(rho_ref, dtype=float).reshape(1, 1, -1) * np.ones_like(flow.rho)
         else:
             rho = np.asarray(rho_ref, dtype=float)
-        dz = float(grid.dz)
+        # per-cell height (variable under vertical stretching) for the column-flux
+        # divergence; the smallest cell sets the sub-step count.
+        if getattr(grid, "stretched", False):
+            dz = grid.dz_c[None, None, :]
+            dz_min = float(grid.dz_c.min())
+        else:
+            dz = dz_min = float(grid.dz)
         for cat, sp in _CATS:
             q = np.asarray(getattr(flow, sp), dtype=float)
             vt = sd.mass_weighted_vt(q, rho, cat)
             vmax = float(np.max(vt)) if vt.size else 0.0
-            nsub = max(1, int(np.ceil(vmax * dt / max(dz, 1e-9))))
+            nsub = max(1, int(np.ceil(vmax * dt / max(dz_min, 1e-9))))
             dts = dt / nsub
             surf = flow.surface_precip[cat]           # 2-D (nx,ny), accumulates mm
             step_out = np.zeros_like(surf)

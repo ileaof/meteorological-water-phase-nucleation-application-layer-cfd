@@ -997,6 +997,7 @@ meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resoluti
 | `--dynamics boussinesq\|anelastic` | dynamical core. `boussinesq` (default, constant density — validated test mode); `anelastic` uses ρ₀(z) with ∇·(ρ₀**u**)=0, capturing deep-column mass expansion (updrafts amplifying with height). Milestone 3. |
 | `--tecplot` | also write `flow.dat`, a Tecplot 360 ASCII file (`ORDERED`/`DATAPACKING=POINT` zones, one per snapshot, grouped by `STRANDID`+`SOLUTIONTIME` for time animation), alongside the NetCDF. Readable by Tecplot 360, py2tec, ParaView. |
 | `--kernel-nucleation` | two-way stage: feed the validated 2nd-order kernel rate *J* as the microphysics embryo source (eq39 pathway) instead of CCN/IN activation. Builds/uses the nucleation lookup table (one-time build). Milestone 7. |
+| `--z-stretch R` | vertical grid stretching ratio (`R>1` clusters levels near the surface: dz_k ∝ R^k, finer low / coarser aloft; `1.0`=uniform). Variable-dz projection uses the direct solver. Milestone 8. |
 | `--no-microphysics` | stage = none (pure flow) |
 | `--diagnostic-only` | alias for one-way |
 | `--method direct\|lookup` | kernel evaluation method (lookup required at scale) |
@@ -1411,7 +1412,7 @@ the "idealised demonstration" caveats are lifted.
 | M5 — conservative transport | done | **conservative flux-form scalar transport** (projected divergence-free staggered velocity + ρ₀ weighting + 2nd-order MUSCL): `∫ρ₀q` conserved (dynamics-only water error ~1e−3, down from −5.7 %). **Finding:** the old storm's vigour was partly numerical; the honest storm uses a saturated-bubble trigger + light SGS damping (~28 % of the parcel ceiling, coarse grid). Residual water error grows with intensity (~2 % at ~24 m/s) from the ρ₀-vs-actual-ρ mismatch in microphysics/sedimentation — consistent-density coupling is M6. |
 | M6 — consistent-density accounting | done | the conservation budget is now **ρ₀(z)-weighted** (`∫ρ₀q`), consistent with what the anelastic transport conserves. This resolved the M5 "residual": it was a diagnostic mismatch (an unweighted budget drifted ~2 % as a strong updraft redistributed water through the ρ₀ gradient), not lost water — the water error is now ~1e−3 at any intensity. |
 | M7 — kernel coupling + sedimentation | done | `--kernel-nucleation` feeds the validated 2nd-order kernel rate *J* (via the lookup) as the two-way microphysics embryo source (eq39 pathway) instead of empirical CCN/IN — the kernel supplies the SOURCE, the microphysics still grows/converts (nucleation never by itself confirms precip). Plus a ρ₀-consistent sedimentation so the airborne→surface transfer conserves `∫ρ₀q` (Boussinesq storm water error −5.5e−3 → −1.5e−3). |
-| M8 — convergence study | done | `examples/convergence_study.py` runs the storm across a resolution ladder and quantifies the resolution-dependence (updraft strengthens as dx decreases; conservation holds on every grid) — confirms convection-*permitting*, not grid-independent (dx <~ 250 m needed; Bryan et al. 2003). Also fixed a resolution-dependent CAPE/LFC/EL bug. Vertical grid stretching remains a refinement. |
+| M8 — convergence study | done | `examples/convergence_study.py` runs the storm across a resolution ladder and quantifies the resolution-dependence (updraft strengthens as dx decreases; conservation holds on every grid) — confirms convection-*permitting*, not grid-independent (dx <~ 250 m needed; Bryan et al. 2003). Also fixed a resolution-dependent CAPE/LFC/EL bug, and added **vertical grid stretching** (`--z-stretch`): clustered levels (finer near the surface) with a variable-dz projection/transport that conserves and enforces the mass constraint; uniform (default) byte-identical. |
 | M9 — observational comparison | done | `examples/observational_comparison.py` tabulates the storm's bulk properties (CAPE/LCL/freezing/EL/shear/updraft/cloud-top) vs observed ranges for a continental deep-convection cell, with per-metric verdicts. Environment is a textbook supercell setup; updraft on the low side (coarse grid). Qualitatively consistent — not a forecast. |
 
 The **anelastic core** (M3) reuses the constant-coefficient Poisson operator by
@@ -1437,6 +1438,10 @@ python -m meteorological_flow.cli --storm-scale --dynamics anelastic --kernel-nu
 # grid-convergence study (M8) and observational comparison (M9):
 python examples/convergence_study.py --grids 16,24,32 --duration 900
 python examples/observational_comparison.py --N 24 --Nz 45 --duration 1200 --qv-sfc 0.016
+
+# vertical grid stretching (M8): finer levels near the surface / cloud base:
+python -m meteorological_flow.cli --storm-scale --dynamics anelastic --z-stretch 1.06 \
+    --Nx 24 --Ny 24 --Nz 45 --Lz 18000 --duration 600 --output outputs/storm_stretched
 
 # an anelastic storm run straight from the CLI:
 python -m meteorological_flow.cli --storm-scale --dynamics anelastic \

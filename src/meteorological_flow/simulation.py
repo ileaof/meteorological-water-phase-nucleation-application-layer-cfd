@@ -56,7 +56,8 @@ def _mem_kb():
 
 def _grid_from_config(cfg: SimulationConfig) -> Grid:
     return Grid(nx=cfg.grid.nx, ny=cfg.grid.ny, nz=cfg.grid.nz,
-                Lx=cfg.domain.Lx, Ly=cfg.domain.Ly, Lz=cfg.domain.Lz)
+                Lx=cfg.domain.Lx, Ly=cfg.domain.Ly, Lz=cfg.domain.Lz,
+                z_stretch=getattr(cfg.grid, "z_stretch", 1.0))
 
 
 def _deep_convection_initial(grid: Grid, cfg: SimulationConfig, base=None) -> FlowState:
@@ -125,6 +126,8 @@ def _initial_state(grid: Grid, cfg: SimulationConfig, base=None) -> FlowState:
 
 def _pressure_method(grid: Grid) -> str:
     n = grid.nx * grid.ny * grid.nz
+    if getattr(grid, "stretched", False):
+        return "direct"   # variable-dz operator is asymmetric -> splu (not CG)
     return "direct" if n <= 64_000 else "cg"   # cached splu for <= 40^3
 
 
@@ -258,14 +261,15 @@ class Simulation:
         umax = float(np.abs(uc).max()) if uc.size else 0.0
         vmax = float(np.abs(vc).max()) if vc.size else 0.0
         wmax = float(np.abs(wc).max()) if wc.size else 0.0
-        inv_adv = umax / g.dx + vmax / g.dy + wmax / g.dz
+        dzmin = g.dz if not getattr(g, "stretched", False) else float(g.dz_c.min())
+        inv_adv = umax / g.dx + vmax / g.dy + wmax / dzmin
         self._inv_adv = inv_adv
         # 1.25 margin: the predictor (buoyancy + body force) grows |u| within a step.
         adv_dt = self.cfg.time.cfl / max(1.25 * inv_adv, 1e-12)
         # anisotropic diffusive limit: dt_diff = 0.5 / (K (1/dx^2 + 1/dy^2 + 1/dz^2))
         diff_coef = max(self.cfg.flow.nu, self.cfg.flow.kappa)
         diff_dt = 0.5 / (max(diff_coef, 1e-12)
-                         * (1.0 / g.dx ** 2 + 1.0 / g.dy ** 2 + 1.0 / g.dz ** 2))
+                         * (1.0 / g.dx ** 2 + 1.0 / g.dy ** 2 + 1.0 / dzmin ** 2))
         dt_max = self.cfg.time.dt_max
         candidates = {"advective": adv_dt, "diffusive": diff_dt, "dt_max": dt_max}
         self._dt_limiter = min(candidates, key=candidates.get)

@@ -103,6 +103,24 @@ def test_rho0_weighted_water_budget():
     assert np.isclose(diag.total_water_kg(st, 1.2), float((1.2 * q).sum() * g.cell_vol))
 
 
+def test_vertical_stretching():
+    """Vertical grid stretching: uniform (z_stretch=1) is unchanged; a stretched
+    anelastic storm still enforces the mass constraint (tiny residual from the
+    variable-dz projection), conserves water and stays stable."""
+    gu = Grid(nx=4, ny=4, nz=10, Lx=4000, Ly=4000, Lz=10000)
+    assert gu.stretched is False and np.allclose(gu.dz_c, gu.dz)
+    gs = Grid(nx=4, ny=4, nz=10, Lx=4000, Ly=4000, Lz=10000, z_stretch=1.2)
+    assert gs.stretched and gs.dz_c[0] < gs.dz_c[-1] and np.isclose(gs.dz_c.sum(), 10000.0)
+    cfg = _storm_cfg("anelastic", duration=200.0)
+    cfg.grid.z_stretch = 1.1
+    g = Grid(nx=12, ny=12, nz=30, Lx=cfg.domain.Lx, Ly=cfg.domain.Ly, Lz=cfg.domain.Lz, z_stretch=1.1)
+    rep = Simulation(cfg, base=weisman_klemp(g)).run()
+    c = rep["conservation"]
+    assert c["mass_continuity_residual_norm"] < 1e-2          # variable-dz projection OK
+    assert abs(c["total_water_rel_err"]) < 1e-2               # conserves
+    assert rep["max_cfl"] < 1.0 and np.isfinite(rep["final_stats"]["wmax"])
+
+
 def test_water_measure_label_present():
     cfg = _storm_cfg("anelastic", duration=30.0)
     g = Grid(nx=12, ny=12, nz=30, Lx=cfg.domain.Lx, Ly=cfg.domain.Ly, Lz=cfg.domain.Lz)

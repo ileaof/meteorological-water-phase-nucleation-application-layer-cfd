@@ -76,6 +76,15 @@ def _rho_weight(rho, grid):
     return np.asarray(rho, dtype=float).reshape(1, 1, -1)
 
 
+def _cell_volume(grid):
+    """Cell volume: scalar (uniform) or per-cell (1,1,nz) under vertical stretching.
+    Using it as a factor inside the sum is byte-identical to `sum()*cell_vol` when
+    uniform (a scalar factors out), so existing budgets are unchanged."""
+    if not getattr(grid, "stretched", False):
+        return grid.cell_vol
+    return (grid.dx * grid.dy * grid.dz_c).reshape(1, 1, -1)
+
+
 def total_water_kg(state: FlowState, rho=None) -> float:
     """Complete water inventory [kg]: airborne (vapour + all hydrometeors) plus
     the water accumulated at the surface.  Sedimentation moves water from airborne
@@ -93,7 +102,7 @@ def total_water_kg(state: FlowState, rho=None) -> float:
         a = getattr(state, nm, None)
         if a is not None:
             q = q + a
-    return float((r * q).sum() * state.grid.cell_vol) + surface_water_kg(state)
+    return float((r * q * _cell_volume(state.grid)).sum()) + surface_water_kg(state)
 
 
 def mass_continuity_residual(state: FlowState, rho0_c=None, rho0_wface=None) -> dict:
@@ -105,20 +114,22 @@ def mass_continuity_residual(state: FlowState, rho0_c=None, rho0_wface=None) -> 
     core's continuity constraint (mass conservation), not the limiters.
     """
     g = state.grid
+    dzmin = g.dz if not getattr(g, "stretched", False) else float(g.dz_c.min())
+    dz = g.dz if not getattr(g, "stretched", False) else g.dz_c[None, None, :]
     if rho0_c is not None and rho0_wface is not None:
         rc = np.asarray(rho0_c).reshape(1, 1, -1)
         rwf = np.asarray(rho0_wface).reshape(1, 1, -1)
         dudx = (state.u[1:] - state.u[:-1]) / g.dx
         dvdy = (state.v[:, 1:] - state.v[:, :-1]) / g.dy
         wflux = rwf * state.w
-        dwdz = (wflux[:, :, 1:] - wflux[:, :, :-1]) / g.dz
+        dwdz = (wflux[:, :, 1:] - wflux[:, :, :-1]) / dz
         div = rc * (dudx + dvdy) + dwdz
         wmax = float(np.max(np.abs(state.w))) if state.w.size else 0.0
-        scale = float(np.max(np.abs(rho0_c))) * wmax / g.dz + 1e-12
+        scale = float(np.max(np.abs(rho0_c))) * wmax / dzmin + 1e-12
     else:
         div = g.divergence(state.u, state.v, state.w)
         umax = float(np.max(np.abs(state.velocity_magnitude_center())))
-        scale = umax / min(g.dx, g.dy, g.dz) + 1e-12
+        scale = umax / min(g.dx, g.dy, dzmin) + 1e-12
     interior = div[1:-1, 1:-1, 1:-1] if min(div.shape) > 2 else div
     absmax = float(np.max(np.abs(interior))) if interior.size else 0.0
     return {"abs_max": absmax, "normalised": absmax / scale}
@@ -151,13 +162,13 @@ def _energy_budget(state: FlowState, rho) -> tuple:
     scalar (Boussinesq) or the reference-density PROFILE rho0(z) (anelastic), so
     the budget is consistent with the mass the transport actually conserves."""
     g = state.grid
-    dv = g.cell_vol
+    dv = _cell_volume(g)
     r = _rho_weight(rho, g)
     umag2 = state.velocity_magnitude_center() ** 2          # (nx,ny,nz)
-    ke = 0.5 * float((r * umag2).sum() * dv)
+    ke = 0.5 * float((r * umag2 * dv).sum())
     zc = g.zc.reshape(1, 1, -1) * np.ones(g.center_shape)
-    pe = 9.81 * float((r * zc).sum() * dv)
-    th = 1005.0 * float((r * state.T).sum() * dv)
+    pe = 9.81 * float((r * zc * dv).sum())
+    th = 1005.0 * float((r * state.T * dv).sum())
     return ke, pe, th
 
 

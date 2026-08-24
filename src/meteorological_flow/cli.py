@@ -76,6 +76,9 @@ def build_argparser() -> argparse.ArgumentParser:
                    help="km-scale deep-convection storm: stratified sounding + "
                         "warm-bubble trigger + two-way microphysics (demonstration; "
                         "Boussinesq-stretched over a deep column)")
+    p.add_argument("--z-stretch", type=float, default=None, dest="z_stretch",
+                   help="vertical grid stretching ratio (>1 clusters levels near the "
+                        "surface: finer dz low, coarser aloft; 1.0 = uniform)")
     p.add_argument("--dynamics", choices=("boussinesq", "anelastic"), default=None,
                    help="dynamical core: boussinesq (constant density, test mode) or "
                         "anelastic (rho0(z) reference density, div(rho0 u)=0 -- the "
@@ -118,6 +121,7 @@ def main(argv=None) -> int:
         diagnostic_only=args.diagnostic_only, two_way=args.two_way_coupling,
         storm_scale=args.storm_scale, preset=args.preset,
         Lx=args.Lx, Ly=args.Ly, Lz=args.Lz, Nx=args.Nx, Ny=args.Ny, Nz=args.Nz,
+        z_stretch=args.z_stretch,
         cfl=args.cfl, dt_max=args.dt_max, sgs=args.sgs,
         pressure_drop=args.pressure_drop,
         pressure_gradient=args.pressure_gradient, float32=args.float32,

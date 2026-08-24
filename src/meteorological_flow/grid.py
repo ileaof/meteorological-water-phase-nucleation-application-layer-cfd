@@ -23,18 +23,37 @@ class Grid:
     Lx: float
     Ly: float
     Lz: float
+    z_stretch: float = 1.0      # >1 clusters levels near the surface (finer dz low,
+                                # coarser aloft); 1.0 = uniform (default, unchanged)
 
     def __post_init__(self):
         self.dx = self.Lx / self.nx
         self.dy = self.Ly / self.ny
-        self.dz = self.Lz / self.nz
+        self.dz = self.Lz / self.nz               # uniform reference spacing [m]
         self.xc = (np.arange(self.nx) + 0.5) * self.dx
         self.yc = (np.arange(self.ny) + 0.5) * self.dy
-        self.zc = (np.arange(self.nz) + 0.5) * self.dz
         self.xf = np.linspace(0.0, self.Lx, self.nx + 1)
         self.yf = np.linspace(0.0, self.Ly, self.ny + 1)
-        self.zf = np.linspace(0.0, self.Lz, self.nz + 1)
-        self.cell_vol = self.dx * self.dy * self.dz
+        # vertical levels: uniform, or geometrically stretched (dz_k = dz0 * r^k).
+        if self.z_stretch == 1.0:
+            self.zf = np.linspace(0.0, self.Lz, self.nz + 1)
+            self.zc = (np.arange(self.nz) + 0.5) * self.dz
+        else:
+            w = self.z_stretch ** np.arange(self.nz)          # relative cell heights
+            edges = np.concatenate([[0.0], np.cumsum(w)])
+            self.zf = self.Lz * edges / edges[-1]
+            self.zc = 0.5 * (self.zf[:-1] + self.zf[1:])
+        self.stretched = self.z_stretch != 1.0
+        # dz arrays: cell heights dz_c (nz) and centre-to-centre spacings on the
+        # z-faces dzc_f (nz+1).  For uniform these equal the scalar dz exactly, so
+        # every operator below is byte-identical to the previous scalar-dz version.
+        self.dz_c = np.diff(self.zf)                          # (nz,) cell heights
+        self.dzc_f = np.empty(self.nz + 1)                    # (nz+1,) centre spacings
+        self.dzc_f[1:-1] = np.diff(self.zc)
+        self.dzc_f[0] = self.dz_c[0]                          # boundary (Neumann grad=0)
+        self.dzc_f[-1] = self.dz_c[-1]
+        self.cell_vol = self.dx * self.dy * self.dz           # scalar (uniform value)
+        self.cell_vol_c = self.dx * self.dy * self.dz_c       # (nz,) per-cell volume
 
     # ---- shapes ----
     @property
@@ -61,7 +80,8 @@ class Grid:
         """div(u) = du/dx + dv/dy + dw/dz at cell centres, shape (nx,ny,nz)."""
         dudx = (u[1:, :, :] - u[:-1, :, :]) / self.dx
         dvdy = (v[:, 1:, :] - v[:, :-1, :]) / self.dy
-        dwdz = (w[:, :, 1:] - w[:, :, :-1]) / self.dz
+        dz = self.dz if not self.stretched else self.dz_c[None, None, :]
+        dwdz = (w[:, :, 1:] - w[:, :, :-1]) / dz
         return dudx + dvdy + dwdz
 
     # ---- gradient of a cell-centred scalar -> face gradients ----
@@ -79,7 +99,8 @@ class Grid:
 
     def grad_z_faces(self, p):
         g = np.zeros(self.w_shape)
-        g[:, :, 1:-1] = (p[:, :, 1:] - p[:, :, :-1]) / self.dz
+        spacing = self.dz if not self.stretched else self.dzc_f[None, None, 1:-1]
+        g[:, :, 1:-1] = (p[:, :, 1:] - p[:, :, :-1]) / spacing
         return g
 
     # ---- interpolate cell-centre scalar to face centres (simple average) ----
@@ -129,9 +150,14 @@ class Grid:
 
     def _central_z(self, f):
         g = np.zeros_like(f)
-        g[:, :, 1:-1] = (f[:, :, 2:] - f[:, :, :-2]) / (2 * self.dz)
-        g[:, :, 0] = (f[:, :, 1] - f[:, :, 0]) / self.dz
-        g[:, :, -1] = (f[:, :, -1] - f[:, :, -2]) / self.dz
+        if not self.stretched:
+            g[:, :, 1:-1] = (f[:, :, 2:] - f[:, :, :-2]) / (2 * self.dz)
+            g[:, :, 0] = (f[:, :, 1] - f[:, :, 0]) / self.dz
+            g[:, :, -1] = (f[:, :, -1] - f[:, :, -2]) / self.dz
+        else:
+            g[:, :, 1:-1] = (f[:, :, 2:] - f[:, :, :-2]) / (self.zc[2:] - self.zc[:-2])[None, None, :]
+            g[:, :, 0] = (f[:, :, 1] - f[:, :, 0]) / self.dzc_f[None, None, 1]
+            g[:, :, -1] = (f[:, :, -1] - f[:, :, -2]) / self.dzc_f[None, None, -2]
         return g
 
     def laplacian(self, f):
@@ -143,9 +169,17 @@ class Grid:
         g[:, 1:-1, :] += (f[:, 2:, :] - 2 * f[:, 1:-1, :] + f[:, :-2, :]) / self.dy ** 2
         g[:, 0, :] += (f[:, 1, :] - f[:, 0, :]) / self.dy ** 2
         g[:, -1, :] += (f[:, -1, :] - f[:, -2, :]) / self.dy ** 2
-        g[:, :, 1:-1] += (f[:, :, 2:] - 2 * f[:, :, 1:-1] + f[:, :, :-2]) / self.dz ** 2
-        g[:, :, 0] += (f[:, :, 1] - f[:, :, 0]) / self.dz ** 2
-        g[:, :, -1] += (f[:, :, -1] - f[:, :, -2]) / self.dz ** 2
+        if not self.stretched:
+            g[:, :, 1:-1] += (f[:, :, 2:] - 2 * f[:, :, 1:-1] + f[:, :, :-2]) / self.dz ** 2
+            g[:, :, 0] += (f[:, :, 1] - f[:, :, 0]) / self.dz ** 2
+            g[:, :, -1] += (f[:, :, -1] - f[:, :, -2]) / self.dz ** 2
+        else:                                   # variable-spacing z second derivative
+            dzcf = self.dzc_f[None, None, 1:-1]                 # interior face spacings
+            dzc = self.dz_c[None, None, :]
+            fg = (f[:, :, 1:] - f[:, :, :-1]) / dzcf            # interior face gradients
+            g[:, :, 1:-1] += (fg[:, :, 1:] - fg[:, :, :-1]) / dzc[:, :, 1:-1]
+            g[:, :, 0] += fg[:, :, 0] / dzc[:, :, 0]
+            g[:, :, -1] += fg[:, :, -1] / dzc[:, :, -1]
         return g
 
 

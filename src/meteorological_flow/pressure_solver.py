@@ -50,6 +50,11 @@ class PressureSolver:
         nx, ny, nz = g.nx, g.ny, g.nz
         rows, cols, data = [], [], []
         inv = {0: 1.0 / g.dx ** 2, 1: 1.0 / g.dy ** 2, 2: 1.0 / g.dz ** 2}
+        # variable-dz vertical coefficients (reduce to 1/dz^2 for uniform).  The
+        # z-operator (1/dz_c) d/dz(dp/dz) is asymmetric under stretching, so a
+        # stretched grid uses the direct (splu) solver -- see _pick_method.
+        stretched = getattr(g, "stretched", False)
+        dz_c, dzc_f = (g.dz_c, g.dzc_f) if stretched else (None, None)
         top_cells = set()
         for i in range(nx):
             for j in range(ny):
@@ -68,7 +73,11 @@ class PressureSolver:
                                             (0, 0, -1, 2), (0, 0, 1, 2)):
                         ni, nj, nk = i + di, j + dj, k + dk
                         if 0 <= ni < nx and 0 <= nj < ny and 0 <= nk < nz:
-                            w = inv[ax]
+                            if ax == 2 and stretched:
+                                # neighbour k+1: 1/(dz_c[k]*dzc_f[k+1]); k-1: 1/(dz_c[k]*dzc_f[k])
+                                w = 1.0 / (dz_c[k] * (dzc_f[k + 1] if dk == 1 else dzc_f[k]))
+                            else:
+                                w = inv[ax]
                             diag += w
                             b = _idx(ni, nj, nk, ny, nz)
                             rows.append(a); cols.append(b); data.append(-w)
@@ -156,7 +165,9 @@ class PressureSolver:
         dudx = (state.u[1:, :, :] - state.u[:-1, :, :]) / g.dx
         dvdy = (state.v[:, 1:, :] - state.v[:, :-1, :]) / g.dy
         wflux = rwf * state.w                                        # (nx,ny,nz+1)
-        dwdz = (wflux[:, :, 1:] - wflux[:, :, :-1]) / g.dz
+        # per-cell height under vertical stretching (must match the Poisson z-stencil)
+        dz = g.dz if not getattr(g, "stretched", False) else g.dz_c[None, None, :]
+        dwdz = (wflux[:, :, 1:] - wflux[:, :, :-1]) / dz
         div_rho = rc * (dudx + dvdy) + dwdz
         # A = -lap, so rhs = -(1/dt) div(rho0 u*) gives lap(p') = (1/dt) div(rho0 u*)
         rhs = -(1.0 / dt) * div_rho

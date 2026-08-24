@@ -1588,7 +1588,8 @@ the &ldquo;idealised demonstration&rdquo; caveats are lifted.</p>
 <tr><td>M5 &mdash; conservative transport</td><td>done</td><td><strong>conservative flux-form scalar transport</strong>: the projected divergence-free staggered velocity + &rho;<sub>0</sub> weighting + 2nd-order MUSCL, so <code>&int;&rho;<sub>0</sub>q</code> is conserved (dynamics-only water error ~1e&minus;3, down from &minus;5.7% with the old cell-centre scheme). <strong>Finding:</strong> the old storm's vigour was partly numerical (the non-divergence-free advecting velocity spuriously concentrated moisture); the honest storm is driven by a saturated-bubble trigger + light SGS damping (~28% of the parcel ceiling on a coarse grid). A residual water error grows with intensity (~2% at ~24 m/s) from the &rho;<sub>0</sub>-vs-actual-&rho; mismatch in the microphysics/sedimentation &mdash; consistent-density coupling is M6.</td></tr>
 <tr><td>M6 &mdash; consistent-density accounting</td><td>done</td><td>the conservation budget is now <strong>&rho;<sub>0</sub>(z)-weighted</strong> (<code>int &rho;<sub>0</sub>q</code>), consistent with what the anelastic transport conserves. This resolved the M5 &ldquo;residual&rdquo;: it was a diagnostic mismatch (an unweighted budget spuriously drifted ~2% as a strong updraft redistributed water through the &rho;<sub>0</sub> gradient), not lost water &mdash; the water error is now ~1e&minus;3 at any intensity.</td></tr>
 <tr><td>M7 &mdash; kernel coupling + sedimentation</td><td>done</td><td><code>--kernel-nucleation</code> feeds the validated 2nd-order kernel rate <em>J</em> (via the lookup) as the two-way microphysics embryo source (eq39 pathway) instead of empirical CCN/IN activation &mdash; the kernel supplies the SOURCE, the microphysics still grows/converts, so nucleation never by itself confirms precipitation. Plus a &rho;<sub>0</sub>-consistent sedimentation so the airborne&rarr;surface transfer conserves <code>int &rho;<sub>0</sub>q</code> (Boussinesq storm water error &minus;5.5e&minus;3 &rarr; &minus;1.5e&minus;3).</td></tr>
-<tr><td>M8&ndash;M9</td><td>planned</td><td>grid-convergence study (+ vertical grid stretching), observational comparison</td></tr>
+<tr><td>M8 &mdash; convergence study</td><td>done</td><td><code>examples/convergence_study.py</code> runs the storm across a resolution ladder and quantifies the resolution-dependence (the updraft strengthens as dx decreases) with conservation holding on every grid. Confirms the run is convection-<em>permitting</em>, not grid-independent (dx&nbsp;&lt;~&nbsp;250&nbsp;m needed; Bryan&nbsp;et&nbsp;al.&nbsp;2003). Also fixed a resolution-dependent CAPE/LFC/EL bug in the sounding diagnostics. (Vertical grid stretching &mdash; non-uniform dz &mdash; remains a further refinement.)</td></tr>
+<tr><td>M9 &mdash; observational comparison</td><td>done</td><td><code>examples/observational_comparison.py</code> tabulates the storm's bulk properties (CAPE/LCL/freezing/EL/shear/updraft/cloud-top) against observed ranges for a continental deep-convection cell, with per-metric verdicts. The environment is a textbook moderate-strong supercell setup; the updraft is on the low side (coarse grid, per M8). Qualitatively consistent &mdash; not a forecast.</td></tr>
 </tbody></table>
 <p class="lead-in">The anelastic core (M3) reuses the constant-coefficient Poisson operator by writing the velocity
 correction as <code>u = u* &minus; (&Delta;t/&rho;<sub>0,face</sub>)&nabla;p&prime;</code>, so the face density cancels the operator
@@ -1602,6 +1603,14 @@ python examples/deep_convection_storm.py --shear 20 --qv-sfc 0.016 --duration 12
 
 # compare the two dynamical cores on the same warm-bubble trigger:
 python examples/anelastic_vs_boussinesq.py --N 16 --Nz 40 --duration 180
+
+# feed the validated 2nd-order kernel as the microphysics embryo source (M7):
+python -m meteorological_flow.cli --storm-scale --dynamics anelastic --kernel-nucleation \
+    --Nx 24 --Ny 24 --Nz 45 --Lz 18000 --duration 600 --output outputs/storm_kernel --threads 8
+
+# grid-convergence study (M8) and observational comparison (M9):
+python examples/convergence_study.py --grids 16,24,32 --duration 900
+python examples/observational_comparison.py --N 24 --Nz 45 --duration 1200 --qv-sfc 0.016
 
 # an anelastic storm run straight from the CLI:
 python -m meteorological_flow.cli --storm-scale --dynamics anelastic \

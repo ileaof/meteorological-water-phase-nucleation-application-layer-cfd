@@ -243,19 +243,29 @@ def sounding_diagnostics(base: "BaseState") -> dict:
     cape = cin = 0.0
     lfc_k = el_k = None
     if lcl_k is not None:
+        # LFC: first level above the LCL where the parcel is positively buoyant.
         for k in range(lcl_k + 1, len(z)):
-            dz = z[k] - z[k - 1]
-            bk = 0.5 * (B[k] + B[k - 1])
-            if lfc_k is None and B[k] > 0.0:
+            if B[k] > 0.0:
                 lfc_k = k
-            if lfc_k is not None:
-                if bk > 0.0:
-                    cape += bk * dz
-                elif el_k is None and el_k != lfc_k:
+                break
+        if lfc_k is not None:
+            # CAPE: integrate positive buoyancy from the LFC up to the EL (the
+            # first level above the LFC where buoyancy returns to <= 0).  Using
+            # B[k] (not the layer mean) to detect the EL avoids a spurious
+            # collapse EL==LFC when the layer straddling the LFC has a negative
+            # mean (deep CIN just below); the area still uses the clipped mean.
+            for k in range(lfc_k + 1, len(z)):
+                dz = z[k] - z[k - 1]
+                bk = 0.5 * (B[k] + B[k - 1])
+                if B[k] > 0.0:
+                    cape += max(bk, 0.0) * dz
+                else:
+                    cape += max(bk, 0.0) * dz          # partial last (positive) layer
                     el_k = k
                     break
-        if lfc_k is not None:                         # CIN: negative area below LFC
-            for k in range(1, lfc_k):
+            else:
+                el_k = len(z) - 1                      # buoyant to the domain top
+            for k in range(1, lfc_k + 1):              # CIN: negative area below LFC
                 dz = z[k] - z[k - 1]
                 bk = 0.5 * (B[k] + B[k - 1])
                 if bk < 0.0:

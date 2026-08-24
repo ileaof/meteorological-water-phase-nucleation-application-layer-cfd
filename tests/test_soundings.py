@@ -29,6 +29,18 @@ def test_weisman_klemp_cape_is_physical():
     assert d["w_max_parcel_m_s"] == np.sqrt(2.0 * d["CAPE_J_kg"])
 
 
+def test_cape_robust_across_vertical_resolution():
+    """CAPE/EL must not collapse at certain vertical resolutions (regression: the
+    LFC==EL bug that zeroed CAPE when the layer straddling the LFC had a negative
+    mean buoyancy).  Across coarse-to-fine Nz, CAPE stays physical and the EL near
+    the tropopause."""
+    for nz in (30, 45, 60, 90, 120):
+        d = sounding_diagnostics(weisman_klemp(_deep_grid(nz=nz, Lz=18000.0)))
+        assert 500.0 < d["CAPE_J_kg"] < 4000.0, nz          # never spuriously 0
+        assert 10000.0 < d["EL_m"] < 14000.0, nz            # EL near the tropopause
+        assert d["LFC_m"] < d["EL_m"], nz                   # never LFC == EL
+
+
 def test_sounding_level_ordering():
     d = sounding_diagnostics(weisman_klemp(_deep_grid()))
     assert d["LCL_m"] < d["LFC_m"] < d["EL_m"]

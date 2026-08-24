@@ -1373,14 +1373,28 @@ supersaturation (<code>S_w ≈ 1.7</code>); it is <strong>not</strong> adjusted 
 integrity constraint). Water/energy "errors" are nonzero because the boundaries are open (mass/energy flux through
 them) — expected and documented, not a conservation failure.</p>
 
-<h3>26.2 Verification (the Batch-1 gate)</h3>
-<p>The spec mandates a verification gate before any two-way coupling:</p>
-<ol class="steps">
-<li><code>python -m pytest tests/</code> — the original 24 nucleation tests <strong>plus</strong> the flow suite (<code>tests/test_grid.py</code>, <code>test_advection.py</code>, <code>test_pressure_projection.py</code>, <code>test_scalar_conservation.py</code>, <code>test_boundary_conditions.py</code>, <code>test_nucleation_adapter.py</code>, <code>test_lookup_accuracy.py</code>, <code>test_reference_scenario.py</code>) all pass.</li>
-<li><code>met_h2o_nucleation.py --validate</code> still PASS (the guarded core is untouched).</li>
-<li><code>python -m meteorological_flow.cli --validate</code> — the flow suite green.</li>
-<li>The 20³ one-way reference demo produces NetCDF + JSON + CSV + PNG and a physically sane report.</li>
-</ol>
+<h3>26.2 Running the tests</h3>
+<pre><code>python -m pytest tests/ -q                                   # full suite: 138 tests
+python -m pytest tests/test_conservation.py -q               # one file
+python -m pytest tests/test_soundings.py::test_weisman_klemp_cape_is_physical -q
+
+# the guarded engine + the flow validation suite (exit 0/1):
+python met_h2o_nucleation.py --validate
+python -m meteorological_flow.cli --validate</code></pre>
+<p>The suite maps to the features/options added by the deep-convection programme; every new option is
+<strong>default-off / opt-in</strong>, so the whole suite runs with the solver in its validated default
+configuration and the option-specific tests build the opted-in config explicitly.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>test file</th><th>covers (option exercised)</th></tr></thead><tbody>
+<tr><td><code>test_met_nucleation.py</code></td><td>validated Eq.39a/39b kernel (24 checks) + <code>--validate</code></td></tr>
+<tr><td><code>test_microphysics*.py</code>, <code>test_heavy_scenario.py</code></td><td><code>precip_microphysics</code> bulk scheme + evidence diagnostics</td></tr>
+<tr><td><code>test_grid/advection/pressure_projection/boundary_conditions/scalar_conservation/cfd_geometry.py</code></td><td>flow core (C-grid, projection, BCs, geometry)</td></tr>
+<tr><td><code>test_soundings.py</code></td><td><strong>M2</strong> Weisman&ndash;Klemp sounding + CAPE/CIN/LCL/LFC/EL (+ resolution-robustness)</td></tr>
+<tr><td><code>test_anelastic.py</code></td><td><strong>M3</strong> <code>--dynamics anelastic</code> (const-&rho;<sub>0</sub>&equiv;Boussinesq; &nabla;&middot;(&rho;<sub>0</sub>u)=0)</td></tr>
+<tr><td><code>test_conservation.py</code></td><td><strong>M4&ndash;M6</strong> exact equilibrium, conservative mass-flux transport, &rho;<sub>0</sub>-weighted budget; <strong>M8</strong> <code>--z-stretch</code>; <code>--periodic</code> sheared storm</td></tr>
+<tr><td><code>test_flow_microphysics_coupling.py</code></td><td>two-way coupling, <code>--storm-scale</code>, <code>--preset storm-*</code>, <strong>M7</strong> <code>--kernel-nucleation</code></td></tr>
+<tr><td><code>test_tecplot.py</code></td><td><code>--tecplot</code> (Tecplot 360 ASCII, precip species)</td></tr>
+</tbody></table></div>
 <p class="note"><strong>Batch 2 (gated, next)</strong> — <code>phase_change.py</code>: vapour depletion
 (mass-conserving, <code>q_v ≥ 0</code>) + latent heat (condensation/deposition/freezing/melting signs) + buoyancy
 feedback; then hydrometeor transport + sedimentation; precip favorability diagnostics (labelled, not prediction);

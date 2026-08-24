@@ -1139,14 +1139,34 @@ mixing-zone supersaturation (`S_w ≈ 1.7`); it is **not** adjusted for visual
 plausibility. Water/energy "errors" are nonzero because the boundaries are open
 (mass/energy flux through them) — expected and documented.
 
-### 26.2 Verification (the Batch-1 gate)
+### 26.2 Running the tests
 
-1. `python -m pytest tests/` — the original nucleation tests **plus** the flow
-   suite all pass.
-2. `met_h2o_nucleation.py --validate` still PASS (the guarded core is untouched).
-3. `python -m meteorological_flow.cli --validate` — the flow suite green.
-4. The 20³ one-way reference demo produces NetCDF + JSON + CSV + PNG and a
-   physically sane report.
+```bash
+python -m pytest tests/ -q          # full suite: 138 tests
+python -m pytest tests/test_conservation.py -q      # one file
+python -m pytest tests/test_soundings.py::test_weisman_klemp_cape_is_physical -q  # one test
+
+# the guarded engine + the flow validation suite (exit 0/1):
+python met_h2o_nucleation.py --validate
+python -m meteorological_flow.cli --validate
+```
+
+The suite maps to the features/options added by the deep-convection programme:
+
+| Test file | Covers (option it exercises) |
+|---|---|
+| `test_met_nucleation.py` | the validated Eq.39a/39b kernel (24 checks) + `--validate` |
+| `test_microphysics*.py`, `test_heavy_scenario.py` | `precip_microphysics` bulk scheme + evidence diagnostics |
+| `test_grid.py`, `test_advection.py`, `test_pressure_projection.py`, `test_boundary_conditions.py`, `test_scalar_conservation.py`, `test_cfd_geometry.py` | flow core (C-grid, projection, BCs, geometry) |
+| `test_soundings.py` | **M2** Weisman–Klemp sounding + CAPE/CIN/LCL/LFC/EL (+ resolution-robustness) |
+| `test_anelastic.py` | **M3** `--dynamics anelastic` (const-ρ₀≡Boussinesq, ∇·(ρ₀u)=0, cores differ) |
+| `test_conservation.py` | **M4–M6** exact equilibrium, conservative mass-flux transport, ρ₀-weighted budget; **M8** `--z-stretch`; `--periodic` sheared storm |
+| `test_flow_microphysics_coupling.py` | two-way coupling, `--storm-scale`, `--preset storm-*`, **M7** `--kernel-nucleation` |
+| `test_tecplot.py` | `--tecplot` (Tecplot 360 ASCII, precip species) |
+
+Every new option is **default-off / opt-in**, so the whole suite runs with the
+solver in its validated default configuration; the option-specific tests
+construct the opted-in config explicitly.
 
 > **Batch 2 (gated, next)** — vapour depletion (mass-conserving, `q_v ≥ 0`) +
 > latent heat + buoyancy feedback; then hydrometeor transport + sedimentation;

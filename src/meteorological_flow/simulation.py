@@ -55,9 +55,10 @@ def _mem_kb():
 
 
 def _grid_from_config(cfg: SimulationConfig) -> Grid:
+    periodic = getattr(cfg.boundaries, "x_west", None) == "periodic"
     return Grid(nx=cfg.grid.nx, ny=cfg.grid.ny, nz=cfg.grid.nz,
                 Lx=cfg.domain.Lx, Ly=cfg.domain.Ly, Lz=cfg.domain.Lz,
-                z_stretch=getattr(cfg.grid, "z_stretch", 1.0))
+                z_stretch=getattr(cfg.grid, "z_stretch", 1.0), periodic=periodic)
 
 
 def _deep_convection_initial(grid: Grid, cfg: SimulationConfig, base=None) -> FlowState:
@@ -78,6 +79,12 @@ def _deep_convection_initial(grid: Grid, cfg: SimulationConfig, base=None) -> Fl
     state.theta = theta0 + dth
     state.qv = np.maximum(qv0 + dqv, 0.0)
     state.p0_field = base.field(base.p0, grid.center_shape)
+    # environmental wind: periodic lateral BCs ingest the mean wind u0(z)/v0(z)
+    # (from the sounding shear) so the flow is sheared and the updraft can tilt /
+    # organise; the closed-wall storm starts from rest (u0 not advectable there).
+    if getattr(grid, "periodic", False):
+        state.u[:] = np.asarray(base.u0, dtype=float)[None, None, :]
+        state.v[:] = np.asarray(base.v0, dtype=float)[None, None, :]
     bc.apply_velocity_bcs(state, grid, cfg)
     bc.apply_scalar_bcs(state, grid, cfg, theta0=theta0, qv0=qv0)
     state.diagnose(cfg)
@@ -220,6 +227,15 @@ class Simulation:
         # vertically through the rho0 gradient -- M6).  Boussinesq: scalar rho0.
         self.rho_ref = (self.rho0_c if (self.dynamics == "anelastic" and self.rho0_c is not None)
                         else self.rho0)
+        # periodic storm: face-broadcast environmental wind so the Rayleigh drag
+        # relaxes the PERTURBATION toward it (the mean shear persists rather than
+        # being damped away, which would defeat the point of ingesting it).
+        self._u0_face = self._v0_face = None
+        if getattr(self.grid, "periodic", False) and self.base is not None:
+            self._u0_face = np.broadcast_to(np.asarray(self.base.u0, float)[None, None, :],
+                                            self.grid.u_shape).copy()
+            self._v0_face = np.broadcast_to(np.asarray(self.base.v0, float)[None, None, :],
+                                            self.grid.v_shape).copy()
         # nucleation (diagnostic, one-way) vs microphysics (two-way coupling)
         self.stage = cfg.nucleation.stage
         self.do_nucleation = self.stage == "one_way"
@@ -312,7 +328,12 @@ class Simulation:
         # A documented bulk subgrid dissipation; 0 disables it.
         if cfg.flow.gamma_damp > 0.0:
             decay = 1.0 - cfg.flow.gamma_damp * dt
-            st.u *= decay; st.v *= decay; st.w *= decay
+            if self._u0_face is not None:      # relax perturbation -> mean wind persists
+                st.u = self._u0_face + (st.u - self._u0_face) * decay
+                st.v = self._v0_face + (st.v - self._v0_face) * decay
+            else:
+                st.u *= decay; st.v *= decay
+            st.w *= decay
         # safety limiter: bound velocities so the explicit upwind scheme stays
         # stable under strong buoyant acceleration (documented; only bites at
         # extreme speeds, never in the shallow mixing-chamber reference).

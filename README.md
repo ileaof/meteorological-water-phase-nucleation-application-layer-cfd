@@ -998,6 +998,7 @@ meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resoluti
 | `--tecplot` | also write `flow.dat`, a Tecplot 360 ASCII file (`ORDERED`/`DATAPACKING=POINT` zones, one per snapshot, grouped by `STRANDID`+`SOLUTIONTIME` for time animation), alongside the NetCDF. Readable by Tecplot 360, py2tec, ParaView. |
 | `--kernel-nucleation` | two-way stage: feed the validated 2nd-order kernel rate *J* as the microphysics embryo source (eq39 pathway) instead of CCN/IN activation. Builds/uses the nucleation lookup table (one-time build). Milestone 7. |
 | `--z-stretch R` | vertical grid stretching ratio (`R>1` clusters levels near the surface: dz_k ∝ R^k, finer low / coarser aloft; `1.0`=uniform). Variable-dz projection uses the direct solver. Milestone 8. |
+| `--periodic` | periodic lateral (x,y) boundaries: the environmental mean wind u₀(z) is ingested (and persists via a perturbation-relaxed drag) so vertical shear **tilts/organises** the updraft. Pair with a sheared sounding (`--shear`). Projection and advection wrap in x/y. |
 | `--no-microphysics` | stage = none (pure flow) |
 | `--diagnostic-only` | alias for one-way |
 | `--method direct\|lookup` | kernel evaluation method (lookup required at scale) |
@@ -1427,6 +1428,8 @@ constraint reduces exactly to it when ρ₀ is constant (regression-tested).
 # two-way microphysics; reports the environment and the parcel-theory anchors):
 python examples/deep_convection_storm.py --duration 720
 python examples/deep_convection_storm.py --shear 20 --qv-sfc 0.016 --duration 1200
+# ... with --periodic the mean wind is ingested and TILTS/organises the updraft:
+python examples/deep_convection_storm.py --periodic --shear 25 --N 20 --duration 1200
 
 # compare the two dynamical cores on the same warm-bubble trigger:
 python examples/anelastic_vs_boussinesq.py --N 16 --Nz 40 --duration 180

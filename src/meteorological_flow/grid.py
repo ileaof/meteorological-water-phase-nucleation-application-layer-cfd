@@ -25,6 +25,7 @@ class Grid:
     Lz: float
     z_stretch: float = 1.0      # >1 clusters levels near the surface (finer dz low,
                                 # coarser aloft); 1.0 = uniform (default, unchanged)
+    periodic: bool = False      # periodic lateral (x,y) boundaries (mean-wind storm)
 
     def __post_init__(self):
         self.dx = self.Lx / self.nx
@@ -86,15 +87,22 @@ class Grid:
 
     # ---- gradient of a cell-centred scalar -> face gradients ----
     def grad_x_faces(self, p):
-        """dp/dx on x-faces (nx+1,ny,nz).  Interior: central; boundary: 0
-        (Neumann for the projection pressure by default)."""
+        """dp/dx on x-faces (nx+1,ny,nz).  Interior: central; boundary faces are
+        0 (Neumann) by default, or the periodic wrap (p[0]-p[nx-1])/dx when the
+        grid is periodic (face 0 == face nx)."""
         g = np.zeros(self.u_shape)
         g[1:-1, :, :] = (p[1:, :, :] - p[:-1, :, :]) / self.dx
+        if self.periodic:
+            wrap = (p[0, :, :] - p[-1, :, :]) / self.dx
+            g[0, :, :] = wrap; g[-1, :, :] = wrap
         return g
 
     def grad_y_faces(self, p):
         g = np.zeros(self.v_shape)
         g[:, 1:-1, :] = (p[:, 1:, :] - p[:, :-1, :]) / self.dy
+        if self.periodic:
+            wrap = (p[:, 0, :] - p[:, -1, :]) / self.dy
+            g[:, 0, :] = wrap; g[:, -1, :] = wrap
         return g
 
     def grad_z_faces(self, p):
@@ -161,14 +169,21 @@ class Grid:
         return g
 
     def laplacian(self, f):
-        """5/7-point Laplacian of a cell-centred scalar (used by diffusion)."""
+        """5/7-point Laplacian of a cell-centred scalar (used by diffusion).
+        Lateral boundaries: one-sided (Neumann) by default, or periodic wrap."""
         g = np.zeros_like(f)
         g[1:-1, :, :] += (f[2:, :, :] - 2 * f[1:-1, :, :] + f[:-2, :, :]) / self.dx ** 2
-        g[0, :, :] += (f[1, :, :] - f[0, :, :]) / self.dx ** 2
-        g[-1, :, :] += (f[-1, :, :] - f[-2, :, :]) / self.dx ** 2
         g[:, 1:-1, :] += (f[:, 2:, :] - 2 * f[:, 1:-1, :] + f[:, :-2, :]) / self.dy ** 2
-        g[:, 0, :] += (f[:, 1, :] - f[:, 0, :]) / self.dy ** 2
-        g[:, -1, :] += (f[:, -1, :] - f[:, -2, :]) / self.dy ** 2
+        if self.periodic:
+            g[0, :, :] += (f[1, :, :] - 2 * f[0, :, :] + f[-1, :, :]) / self.dx ** 2
+            g[-1, :, :] += (f[0, :, :] - 2 * f[-1, :, :] + f[-2, :, :]) / self.dx ** 2
+            g[:, 0, :] += (f[:, 1, :] - 2 * f[:, 0, :] + f[:, -1, :]) / self.dy ** 2
+            g[:, -1, :] += (f[:, 0, :] - 2 * f[:, -1, :] + f[:, -2, :]) / self.dy ** 2
+        else:
+            g[0, :, :] += (f[1, :, :] - f[0, :, :]) / self.dx ** 2
+            g[-1, :, :] += (f[-1, :, :] - f[-2, :, :]) / self.dx ** 2
+            g[:, 0, :] += (f[:, 1, :] - f[:, 0, :]) / self.dy ** 2
+            g[:, -1, :] += (f[:, -1, :] - f[:, -2, :]) / self.dy ** 2
         if not self.stretched:
             g[:, :, 1:-1] += (f[:, :, 2:] - 2 * f[:, :, 1:-1] + f[:, :, :-2]) / self.dz ** 2
             g[:, :, 0] += (f[:, :, 1] - f[:, :, 0]) / self.dz ** 2

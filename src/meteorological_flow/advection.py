@@ -164,9 +164,14 @@ def advect_center_massflux(s, uf, vf, wf, grid: Grid, dt: float,
         sx[1:-1, :, :] = np.where(uf[1:-1, :, :] > 0.0, s[:-1, :, :], s[1:, :, :])
         sy[:, 1:-1, :] = np.where(vf[:, 1:-1, :] > 0.0, s[:, :-1, :], s[:, 1:, :])
         sz[:, :, 1:-1] = np.where(wf[:, :, 1:-1] > 0.0, s[:, :, :-1], s[:, :, 1:])
-    # domain-boundary faces: edge cell value (walls carry u_face=0 -> zero flux)
-    sx[0, :, :] = s[0, :, :]; sx[-1, :, :] = s[-1, :, :]
-    sy[:, 0, :] = s[:, 0, :]; sy[:, -1, :] = s[:, -1, :]
+    # lateral boundary faces: edge cell value (walls carry u_face=0 -> zero flux),
+    # or upwind from the periodic wrap neighbour (face 0 == face nx).
+    if getattr(grid, "periodic", False):
+        sx[0, :, :] = np.where(uf[0, :, :] > 0.0, s[-1, :, :], s[0, :, :]); sx[-1, :, :] = sx[0, :, :]
+        sy[:, 0, :] = np.where(vf[:, 0, :] > 0.0, s[:, -1, :], s[:, 0, :]); sy[:, -1, :] = sy[:, 0, :]
+    else:
+        sx[0, :, :] = s[0, :, :]; sx[-1, :, :] = s[-1, :, :]
+        sy[:, 0, :] = s[:, 0, :]; sy[:, -1, :] = s[:, -1, :]
     sz[:, :, 0] = s[:, :, 0]; sz[:, :, -1] = s[:, :, -1]
     # mass fluxes rho0 * u_face * s_face
     Fx = rc * uf * sx

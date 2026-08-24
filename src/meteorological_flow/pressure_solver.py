@@ -55,6 +55,7 @@ class PressureSolver:
         # stretched grid uses the direct (splu) solver -- see _pick_method.
         stretched = getattr(g, "stretched", False)
         dz_c, dzc_f = (g.dz_c, g.dzc_f) if stretched else (None, None)
+        periodic = getattr(g, "periodic", False)   # wrap x/y neighbours
         top_cells = set()
         for i in range(nx):
             for j in range(ny):
@@ -72,6 +73,10 @@ class PressureSolver:
                                             (0, -1, 0, 1), (0, 1, 0, 1),
                                             (0, 0, -1, 2), (0, 0, 1, 2)):
                         ni, nj, nk = i + di, j + dj, k + dk
+                        if periodic and ax == 0:
+                            ni %= nx            # periodic x wrap (face 0 == face nx)
+                        if periodic and ax == 1:
+                            nj %= ny            # periodic y wrap
                         if 0 <= ni < nx and 0 <= nj < ny and 0 <= nk < nz:
                             if ax == 2 and stretched:
                                 # neighbour k+1: 1/(dz_c[k]*dzc_f[k+1]); k-1: 1/(dz_c[k]*dzc_f[k])

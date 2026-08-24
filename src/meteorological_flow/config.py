@@ -375,6 +375,7 @@ def apply_overrides(cfg: SimulationConfig, *,
                    storm_scale: bool = False,
                    dynamics: str | None = None,
                    tecplot: bool = False,
+                   periodic: bool = False,
                    kernel_nucleation: bool = False,
                    method: str | None = None,
                    threads: int | None = None) -> SimulationConfig:
@@ -453,6 +454,11 @@ def apply_overrides(cfg: SimulationConfig, *,
         cfg.physics.dynamics = str(dynamics)
     if tecplot and "tecplot" not in cfg.output.format:
         cfg.output.format = list(cfg.output.format) + ["tecplot"]
+    if periodic:
+        # periodic lateral boundaries (mean-wind / shear storm): the environmental
+        # wind is ingested and the projection/advection wrap in x and y.
+        cfg.boundaries.x_west = cfg.boundaries.x_east = "periodic"
+        cfg.boundaries.y = "periodic"
     if kernel_nucleation:
         cfg.nucleation.couple_kernel = True
     if method is not None:

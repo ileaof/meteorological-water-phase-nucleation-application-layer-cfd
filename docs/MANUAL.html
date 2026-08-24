@@ -1239,6 +1239,7 @@ ParaView. It is written alongside <code>flow.nc</code> and its write is guarded,
 <tr><td><code>--tecplot</code></td><td>also write <code>flow.dat</code>, a Tecplot&nbsp;360 ASCII file (structured <code>ORDERED</code>/<code>DATAPACKING=POINT</code> zones, one per snapshot, grouped by <code>STRANDID</code>+<code>SOLUTIONTIME</code> for time animation), alongside the NetCDF. Readable by Tecplot&nbsp;360, py2tec and ParaView.</td></tr>
 <tr><td><code>--kernel-nucleation</code></td><td>two-way stage: feed the validated 2nd-order kernel rate <em>J</em> as the microphysics embryo source (eq39 pathway) instead of CCN/IN activation. Builds/uses the nucleation lookup table (one-time build). Milestone&nbsp;7.</td></tr>
 <tr><td><code>--z-stretch R</code></td><td>vertical grid stretching ratio (<code>R&gt;1</code> clusters levels near the surface: dz<sub>k</sub>&prop;R<sup>k</sup>, finer low / coarser aloft; <code>1.0</code>=uniform). Variable-dz projection uses the direct solver. Milestone&nbsp;8.</td></tr>
+<tr><td><code>--periodic</code></td><td>periodic lateral (x,y) boundaries: the environmental mean wind <em>u</em><sub>0</sub>(z) is ingested (and persists via a perturbation-relaxed drag) so vertical shear <strong>tilts/organises</strong> the updraft. Pair with a sheared sounding (e.g. <code>--shear</code>). The projection and advection wrap in x/y.</td></tr>
 <tr><td><code>--no-microphysics</code></td><td>stage = none (pure flow)</td></tr>
 <tr><td><code>--diagnostic-only</code></td><td>alias for one-way</td></tr>
 <tr><td><code>--method direct|lookup</code></td><td>kernel evaluation method (lookup required at scale)</td></tr>
@@ -1601,6 +1602,8 @@ constraint reduces exactly to Boussinesq when &rho;<sub>0</sub> is constant (reg
 # two-way microphysics; reports the environment and the parcel-theory anchors):
 python examples/deep_convection_storm.py --duration 720
 python examples/deep_convection_storm.py --shear 20 --qv-sfc 0.016 --duration 1200
+# ... with --periodic the mean wind is ingested and TILTS/organises the updraft:
+python examples/deep_convection_storm.py --periodic --shear 25 --N 20 --duration 1200
 
 # compare the two dynamical cores on the same warm-bubble trigger:
 python examples/anelastic_vs_boussinesq.py --N 16 --Nz 40 --duration 180

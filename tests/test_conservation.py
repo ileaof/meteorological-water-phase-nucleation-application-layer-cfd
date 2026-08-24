@@ -121,6 +121,30 @@ def test_vertical_stretching():
     assert rep["max_cfl"] < 1.0 and np.isfinite(rep["final_stats"]["wmax"])
 
 
+def test_periodic_shear_storm():
+    """Mean-wind/shear ingestion: periodic lateral BCs give a divergence-free
+    projection, ingest the environmental wind (persisting via the perturbation-
+    relaxed Rayleigh drag), conserve water and stay stable."""
+    cfg = apply_overrides(SimulationConfig(), storm_scale=True, dynamics="anelastic", periodic=True)
+    assert cfg.boundaries.x_west == "periodic" and cfg.boundaries.y == "periodic"
+    cfg.domain.Lz = 16000.0
+    cfg.grid.nx = cfg.grid.ny = 12
+    cfg.grid.nz = 30
+    cfg.time.duration = 200.0
+    cfg.output.format = []; cfg.output.figures = []; cfg.output.restart = False
+    cfg.output.outdir = "outputs/_test_periodic"
+    g = Grid(nx=12, ny=12, nz=30, Lx=cfg.domain.Lx, Ly=cfg.domain.Ly, Lz=16000.0, periodic=True)
+    assert g.periodic
+    sim = Simulation(cfg, base=weisman_klemp(g, u_shear=20.0))
+    assert float(sim.state.u.max()) > 15.0             # mean wind ingested at init (u0 top ~20)
+    rep = sim.run()
+    c = rep["conservation"]
+    assert c["mass_continuity_residual_norm"] < 1e-2   # periodic projection divergence-free
+    assert abs(c["total_water_rel_err"]) < 1e-2        # conserves
+    assert rep["max_cfl"] < 1.0 and np.isfinite(rep["final_stats"]["wmax"])
+    assert float(sim.state.u.max()) > 10.0             # mean wind persists (not damped away)
+
+
 def test_water_measure_label_present():
     cfg = _storm_cfg("anelastic", duration=30.0)
     g = Grid(nx=12, ny=12, nz=30, Lx=cfg.domain.Lx, Ly=cfg.domain.Ly, Lz=cfg.domain.Lz)

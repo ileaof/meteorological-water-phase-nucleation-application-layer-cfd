@@ -86,6 +86,10 @@ def build_argparser() -> argparse.ArgumentParser:
     p.add_argument("--tecplot", action="store_true",
                    help="also write Tecplot 360 ASCII flow.dat (ORDERED/POINT zones, "
                         "STRANDID time animation) alongside the NetCDF output")
+    p.add_argument("--periodic", action="store_true",
+                   help="periodic lateral (x,y) boundaries: ingest the environmental "
+                        "mean wind so vertical shear can tilt/organise the storm "
+                        "(pair with a sheared sounding). Milestone follow-up.")
     p.add_argument("--kernel-nucleation", action="store_true", dest="kernel_nucleation",
                    help="two-way stage: feed the validated 2nd-order kernel rate J as the "
                         "microphysics embryo source (eq39 pathway) instead of CCN/IN "
@@ -125,7 +129,7 @@ def main(argv=None) -> int:
         cfl=args.cfl, dt_max=args.dt_max, sgs=args.sgs,
         pressure_drop=args.pressure_drop,
         pressure_gradient=args.pressure_gradient, float32=args.float32,
-        dynamics=args.dynamics, tecplot=args.tecplot,
+        dynamics=args.dynamics, tecplot=args.tecplot, periodic=args.periodic,
         kernel_nucleation=args.kernel_nucleation,
         method=args.method, threads=args.threads)
 

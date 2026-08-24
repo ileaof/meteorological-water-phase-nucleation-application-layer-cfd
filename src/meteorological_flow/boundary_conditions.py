@@ -32,6 +32,12 @@ def inflow_state(inflow: InflowConfig, P0: float):
 def apply_velocity_bcs(state: FlowState, grid: Grid, cfg: SimulationConfig) -> None:
     """Enforce velocity boundary conditions in place (config-driven)."""
     b = cfg.boundaries
+    if getattr(grid, "periodic", False):
+        # periodic lateral: face 0 and face nx are the same physical face.  The
+        # projection/advection wrap; here we keep the shared faces in sync.  The
+        # wall/inflow branches below are skipped (x_west/y == "periodic").
+        state.u[-1, :, :] = state.u[0, :, :]
+        state.v[:, -1, :] = state.v[:, 0, :]
     # x faces: west
     if b.x_west == "inflow":
         state.u[0, :, :] = b.warm_inflow.u          # +x into domain
@@ -125,9 +131,10 @@ def apply_scalar_bcs(state: FlowState, grid: Grid, cfg: SimulationConfig,
     else:
         state.qv[:, :, 0] = state.qv[:, :, 1]
         state.qv[:, :, -1] = state.qv[:, :, -2]
-    # periodic y (option): copy slabs to make the field periodic for the
-    # one-sided operators' boundary rows
-    if b.y == "periodic":
+    # legacy periodic-y ghost copy (for one-sided operators).  Skipped when the
+    # grid is fully periodic: there the operators wrap directly, so cells 0 and
+    # ny-1 are REAL cells and must not be overwritten.
+    if b.y == "periodic" and not getattr(grid, "periodic", False):
         state.theta[:, 0, :] = state.theta[:, -2, :]
         state.theta[:, -1, :] = state.theta[:, 1, :]
         state.qv[:, 0, :] = state.qv[:, -2, :]

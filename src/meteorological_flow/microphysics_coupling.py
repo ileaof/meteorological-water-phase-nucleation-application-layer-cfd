@@ -77,14 +77,23 @@ class MicrophysicsCoupler:
         return budget
 
     # ---- gravitational sedimentation (column fall along -z) ----
-    def sediment(self, flow, grid, dt) -> dict:
+    def sediment(self, flow, grid, dt, rho_ref=None) -> dict:
         """Fall rain/snow/graupel/hail along -z; accumulate surface precip.
-        Returns {category: domain-mean surface flux [kg m^-2 s^-1]}."""
+        Returns {category: domain-mean surface flux [kg m^-2 s^-1]}.
+
+        ``rho_ref`` (the anelastic reference density rho0(z), scalar or (nz,))
+        makes the column mass flux rho0-consistent with the transport, so the
+        airborne->surface transfer conserves int rho0 q (M7); default flow.rho."""
         flow.ensure_hydrometeors()
         out = {}
         if not self.cfg.processes.sedimentation:
             return {c: 0.0 for c, _ in _CATS}
-        rho = flow.rho
+        if rho_ref is None:
+            rho = flow.rho
+        elif np.ndim(rho_ref) <= 1:
+            rho = np.asarray(rho_ref, dtype=float).reshape(1, 1, -1) * np.ones_like(flow.rho)
+        else:
+            rho = np.asarray(rho_ref, dtype=float)
         dz = float(grid.dz)
         for cat, sp in _CATS:
             q = np.asarray(getattr(flow, sp), dtype=float)

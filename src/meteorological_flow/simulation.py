@@ -221,9 +221,15 @@ class Simulation:
         self.stage = cfg.nucleation.stage
         self.do_nucleation = self.stage == "one_way"
         self.do_microphysics = self.stage in ("vapor_depletion", "thermal_feedback", "hydrometeor")
+        # M7: couple the validated kernel rate J as the microphysics embryo source
+        # (eq39 pathway) in the two-way stage.  The kernel supplies the SOURCE; the
+        # microphysics still grows/converts/precipitates -- nucleation alone never
+        # confirms precipitation.
+        self.couple_nucleation = self.do_microphysics and getattr(
+            cfg.nucleation, "couple_kernel", False)
         self.adapter = None
         self.lookup = None
-        if self.do_nucleation:
+        if self.do_nucleation or self.couple_nucleation:
             self.adapter = NucleationAdapter(cfg.nucleation)
             if cfg.nucleation.method == "lookup":
                 self.lookup, _ = _build_lookup(cfg, cfg.output.outdir, self.adapter)
@@ -364,9 +370,18 @@ class Simulation:
         # 6. two-way microphysics: growth/conversion + embryo source + latent-heat
         #    feedback on theta, then gravitational sedimentation to the surface.
         if self.do_microphysics and self.coupler is not None:
-            nf = self.last_nf if (self.do_nucleation and self.lookup is not None) else None
+            # M7: when kernel coupling is on, evaluate the validated 2nd-order rate
+            # on the CURRENT (post-transport) state each step and pass it as the
+            # embryo source; else the microphysics uses its own CCN/IN activation.
+            if self.couple_nucleation and self.adapter is not None:
+                nf = self.adapter.evaluate_field(st, dt, g.cell_vol)
+                self.last_nf = nf
+            else:
+                nf = None
             self.coupler.apply(st, g, dt, nf=nf)
-            self.coupler.sediment(st, g, dt)
+            # anelastic: sediment with the reference density so the airborne->
+            # surface transfer is rho0-consistent with the transport/budget (M7).
+            self.coupler.sediment(st, g, dt, rho_ref=self._transport_rho_c)
             self.coupler.zero_inflow_hydrometeors(st)
             bc.apply_scalar_bcs(st, g, cfg, theta0=self.theta0_field, qv0=self.qv0_field)
             st.diagnose(cfg)
@@ -380,9 +395,9 @@ class Simulation:
                     st.diagnose(cfg)
         st.t = self.t + dt
 
-    # ---- nucleation diagnostics (one-way) ----
+    # ---- nucleation diagnostics (one-way or kernel-coupled two-way) ----
     def _evaluate_nucleation(self, dt: float) -> NucleationField:
-        if not self.do_nucleation or self.adapter is None:
+        if self.adapter is None:
             return NucleationField(self.grid.center_shape)
         return self.adapter.evaluate_field(self.state, dt, self.grid.cell_vol)
 
@@ -533,6 +548,7 @@ class Simulation:
             "limitations": limitations,
         }
         report["stage_microphysics"] = bool(self.do_microphysics)
+        report["kernel_coupled"] = bool(self.couple_nucleation)
         from .config import estimate_memory_gb as _mem
         from .config import geometry as _geom
         report["geometry"] = _geom(cfg)

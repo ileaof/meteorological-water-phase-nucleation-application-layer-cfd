@@ -130,6 +130,30 @@ def test_storm_presets():
     assert over.physics.dynamics == "boussinesq"
 
 
+def test_kernel_nucleation_coupling_wiring():
+    """M7: --kernel-nucleation couples the validated kernel rate J as the two-way
+    microphysics embryo source (eq39 pathway).  Verifies the config/CLI wiring and
+    that the two-way Simulation builds the adapter + sets couple_nucleation."""
+    from meteorological_flow.base_state import weisman_klemp
+    cfg = apply_overrides(SimulationConfig(), storm_scale=True, dynamics="anelastic",
+                          kernel_nucleation=True, method="direct")   # direct -> no lookup build
+    assert cfg.nucleation.couple_kernel is True
+    assert build_argparser().parse_args(["--kernel-nucleation"]).kernel_nucleation is True
+    cfg.grid.nx = cfg.grid.ny = 6; cfg.grid.nz = 12; cfg.domain.Lz = 12000.0
+    cfg.output.format = []; cfg.output.figures = []; cfg.output.restart = False
+    cfg.output.outdir = "outputs/_test_kernel"
+    g = Grid(nx=6, ny=6, nz=12, Lx=cfg.domain.Lx, Ly=cfg.domain.Ly, Lz=12000.0)
+    sim = Simulation(cfg, base=weisman_klemp(g))
+    assert sim.couple_nucleation is True and sim.adapter is not None
+    # default (no flag): two-way stage runs its own CCN/IN activation, not the kernel
+    cfg0 = apply_overrides(SimulationConfig(), storm_scale=True)
+    cfg0.grid.nx = cfg0.grid.ny = 6; cfg0.grid.nz = 12; cfg0.domain.Lz = 12000.0
+    cfg0.output.format = []; cfg0.output.figures = []; cfg0.output.restart = False
+    cfg0.output.outdir = "outputs/_test_kernel0"
+    assert cfg0.nucleation.couple_kernel is False
+    assert Simulation(cfg0, base=weisman_klemp(g)).couple_nucleation is False
+
+
 def test_storm_scale_deep_convection_runs_stably():
     cfg = apply_overrides(SimulationConfig(), storm_scale=True)
     cfg.grid.nx = cfg.grid.ny = 10

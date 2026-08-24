@@ -83,6 +83,10 @@ def build_argparser() -> argparse.ArgumentParser:
     p.add_argument("--tecplot", action="store_true",
                    help="also write Tecplot 360 ASCII flow.dat (ORDERED/POINT zones, "
                         "STRANDID time animation) alongside the NetCDF output")
+    p.add_argument("--kernel-nucleation", action="store_true", dest="kernel_nucleation",
+                   help="two-way stage: feed the validated 2nd-order kernel rate J as the "
+                        "microphysics embryo source (eq39 pathway) instead of CCN/IN "
+                        "activation -- builds/uses the nucleation lookup table (M7)")
     p.add_argument("--method", choices=("lookup", "direct"), default=None,
                    help="nucleation evaluation method")
     p.add_argument("--restart", default=None, help="restart from .npz checkpoint")
@@ -118,6 +122,7 @@ def main(argv=None) -> int:
         pressure_drop=args.pressure_drop,
         pressure_gradient=args.pressure_gradient, float32=args.float32,
         dynamics=args.dynamics, tecplot=args.tecplot,
+        kernel_nucleation=args.kernel_nucleation,
         method=args.method, threads=args.threads)
 
     # geometry + memory report (always shown so the run records its geometry)

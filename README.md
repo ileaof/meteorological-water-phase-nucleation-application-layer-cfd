@@ -996,6 +996,7 @@ meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resoluti
 | `--storm-scale` / `--deep-convection` | km-scale deep-convection storm: stratified sounding + warm-bubble trigger + two-way microphysics (demonstration; Boussinesq-stretched) |
 | `--dynamics boussinesq\|anelastic` | dynamical core. `boussinesq` (default, constant density — validated test mode); `anelastic` uses ρ₀(z) with ∇·(ρ₀**u**)=0, capturing deep-column mass expansion (updrafts amplifying with height). Milestone 3. |
 | `--tecplot` | also write `flow.dat`, a Tecplot 360 ASCII file (`ORDERED`/`DATAPACKING=POINT` zones, one per snapshot, grouped by `STRANDID`+`SOLUTIONTIME` for time animation), alongside the NetCDF. Readable by Tecplot 360, py2tec, ParaView. |
+| `--kernel-nucleation` | two-way stage: feed the validated 2nd-order kernel rate *J* as the microphysics embryo source (eq39 pathway) instead of CCN/IN activation. Builds/uses the nucleation lookup table (one-time build). Milestone 7. |
 | `--no-microphysics` | stage = none (pure flow) |
 | `--diagnostic-only` | alias for one-way |
 | `--method direct\|lookup` | kernel evaluation method (lookup required at scale) |
@@ -1409,7 +1410,8 @@ the "idealised demonstration" caveats are lifted.
 | M4 — conservation | done | stratified reference is now an **exact discrete equilibrium** (perturbation-only diffusion + perturbation-preserving z-boundaries — the limiters don't prop up a phantom circulation); conservation report (mass-continuity residual + complete water/energy budget). Grid stretching + formal convergence fold into M8. |
 | M5 — conservative transport | done | **conservative flux-form scalar transport** (projected divergence-free staggered velocity + ρ₀ weighting + 2nd-order MUSCL): `∫ρ₀q` conserved (dynamics-only water error ~1e−3, down from −5.7 %). **Finding:** the old storm's vigour was partly numerical; the honest storm uses a saturated-bubble trigger + light SGS damping (~28 % of the parcel ceiling, coarse grid). Residual water error grows with intensity (~2 % at ~24 m/s) from the ρ₀-vs-actual-ρ mismatch in microphysics/sedimentation — consistent-density coupling is M6. |
 | M6 — consistent-density accounting | done | the conservation budget is now **ρ₀(z)-weighted** (`∫ρ₀q`), consistent with what the anelastic transport conserves. This resolved the M5 "residual": it was a diagnostic mismatch (an unweighted budget drifted ~2 % as a strong updraft redistributed water through the ρ₀ gradient), not lost water — the water error is now ~1e−3 at any intensity. |
-| M7–M9 | planned | nucleation-lookup coupling + sedimentation refinement, grid-convergence study, observational comparison |
+| M7 — kernel coupling + sedimentation | done | `--kernel-nucleation` feeds the validated 2nd-order kernel rate *J* (via the lookup) as the two-way microphysics embryo source (eq39 pathway) instead of empirical CCN/IN — the kernel supplies the SOURCE, the microphysics still grows/converts (nucleation never by itself confirms precip). Plus a ρ₀-consistent sedimentation so the airborne→surface transfer conserves `∫ρ₀q` (Boussinesq storm water error −5.5e−3 → −1.5e−3). |
+| M8–M9 | planned | grid-convergence study (+ vertical grid stretching), observational comparison |
 
 The **anelastic core** (M3) reuses the constant-coefficient Poisson operator by
 writing the velocity correction as `u = u* − (Δt/ρ₀,face)∇p′`, so the face

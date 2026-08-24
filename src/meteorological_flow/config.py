@@ -110,6 +110,8 @@ class NucleationConfig:
     r_ref: float = 1.0e-7
     gmin: float = 1.0e-3            # floor for |gradT| (K/m), framework well-behaved limit
     dt_diagnostic: float = 60.0     # recompute nucleation diagnostics every this many s
+    couple_kernel: bool = False     # two-way stage: feed the kernel rate J as the
+                                    # microphysics embryo source (eq39 pathway) (M7)
     lookup: LookupConfig = field(default_factory=LookupConfig)
 
 
@@ -200,6 +202,7 @@ def from_dict(d: dict[str, Any]) -> SimulationConfig:
         r_ref=float(_get(nu, "r_ref", 1.0e-7)),
         gmin=float(_get(nu, "gmin", 1.0e-3)),
         dt_diagnostic=float(_get(nu, "dt_diagnostic", 60.0)),
+        couple_kernel=bool(_get(nu, "couple_kernel", False)),
         lookup=LookupConfig(enabled=bool(_get(lk, "enabled", True)),
                             n_T=int(_get(lk, "n_T", 28)), n_pv=int(_get(lk, "n_pv", 20)),
                             n_grad=int(_get(lk, "n_grad", 9)),
@@ -369,6 +372,7 @@ def apply_overrides(cfg: SimulationConfig, *,
                    storm_scale: bool = False,
                    dynamics: str | None = None,
                    tecplot: bool = False,
+                   kernel_nucleation: bool = False,
                    method: str | None = None,
                    threads: int | None = None) -> SimulationConfig:
     """Return a copy of cfg with CLI overrides applied.  Precedence (low->high):
@@ -444,6 +448,8 @@ def apply_overrides(cfg: SimulationConfig, *,
         cfg.physics.dynamics = str(dynamics)
     if tecplot and "tecplot" not in cfg.output.format:
         cfg.output.format = list(cfg.output.format) + ["tecplot"]
+    if kernel_nucleation:
+        cfg.nucleation.couple_kernel = True
     if method is not None:
         cfg.nucleation.method = method
     # threads stored on the lookup config for the table build

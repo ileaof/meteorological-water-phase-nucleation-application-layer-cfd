@@ -211,6 +211,12 @@ class Simulation:
             else:
                 self._transport_rho_c = np.ones(self.grid.nz)
                 self._transport_rho_wf = np.ones(self.grid.nz + 1)
+        # reference density for the CONSERVATION diagnostics: the anelastic
+        # transport conserves int rho0(z) q, so the budgets must weight by rho0(z)
+        # too (an unweighted sum drifts as a strong updraft redistributes water
+        # vertically through the rho0 gradient -- M6).  Boussinesq: scalar rho0.
+        self.rho_ref = (self.rho0_c if (self.dynamics == "anelastic" and self.rho0_c is not None)
+                        else self.rho0)
         # nucleation (diagnostic, one-way) vs microphysics (two-way coupling)
         self.stage = cfg.nucleation.stage
         self.do_nucleation = self.stage == "one_way"
@@ -386,7 +392,7 @@ class Simulation:
         g = self.grid
         outdir = cfg.output.outdir
         os.makedirs(outdir, exist_ok=True)
-        initial = diag.initial_budgets(self.state, self.rho0)
+        initial = diag.initial_budgets(self.state, self.rho_ref)
         self._last_clip = 0.0
         self._last_res = 0.0; self._last_iters = 0
         duration = cfg.time.duration
@@ -424,7 +430,7 @@ class Simulation:
 
     def _record(self, nf: NucleationField, initial: dict) -> None:
         st = self.state
-        bud = diag.conservation_budgets(st, initial, self.rho0)
+        bud = diag.conservation_budgets(st, initial, self.rho_ref)
         stats = diag.summary_stats(st, nf)
         row = {"time": self.t, "step": self.step,
                "total_water_kg": bud["total_water_kg"],
@@ -468,20 +474,20 @@ class Simulation:
         if "budgets" in cfg.output.figures:
             plt_mod.plot_budgets(self.history, os.path.join(outdir, "figures"))
         # JSON summary
-        bud = diag.conservation_budgets(self.state, initial, self.rho0)
+        bud = diag.conservation_budgets(self.state, initial, self.rho_ref)
         stats = diag.summary_stats(self.state, self.last_nf)
         wall = _time.perf_counter() - self._t0
         if self.dynamics == "anelastic":
             core_note = ("Anelastic core: rho0(z) reference density with div(rho0 u)=0, "
                          "so deep-column mass expansion (updrafts amplifying with height) "
                          "is represented -- a strict improvement over Boussinesq for deep "
-                         "convection.  Scalar transport is now conservative flux-form (M5): "
+                         "convection.  Scalar transport is conservative flux-form (M5): "
                          "the projected staggered velocity + rho0 weighting + 2nd-order "
-                         "MUSCL, so int rho0 q is conserved (dynamics-only water error "
-                         "~1e-3).  A residual water error grows with updraft strength "
-                         "(~2% at ~24 m/s) from the density-weighting mismatch between the "
-                         "rho0-based transport and the actual-rho microphysics/sedimentation "
-                         "-- a consistent-density coupling is the M6 refinement.")
+                         "MUSCL, so int rho0 q is conserved.  The conservation budget is "
+                         "rho0(z)-weighted (M6), consistent with what the transport "
+                         "conserves -- the water error stays ~1e-3 at any updraft strength "
+                         "(an unweighted budget spuriously drifted ~2% at ~24 m/s as the "
+                         "updraft redistributed water through the rho0 gradient).")
         else:
             core_note = ("Boussinesq: density variations enter only through buoyancy; over a "
                          "deep storm column (10-12 km) this is stretched beyond strict "

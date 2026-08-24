@@ -84,6 +84,25 @@ def test_massflux_transport_conserves_and_positive():
         assert np.min(s2) >= -1e-12, order                   # positivity (small dt)
 
 
+def test_rho0_weighted_water_budget():
+    """M6: total_water_kg weights the airborne inventory by the density profile,
+    so it measures int rho0 q (what the anelastic transport conserves), not the
+    unweighted sum."""
+    g = Grid(nx=5, ny=5, nz=12, Lx=5000, Ly=5000, Lz=12000)
+    st = FlowState.zeros(g)
+    st.qv[:] = 1e-2
+    st.qr[:, :, 3] = 2e-3
+    rho0 = np.linspace(1.15, 0.35, g.nz)                       # decreasing with height
+    q = st.qv + st.ql + st.qi + st.qr + st.qs + st.qg + st.qh
+    expected = float((rho0[None, None, :] * q).sum() * g.cell_vol)
+    assert np.isclose(diag.total_water_kg(st, rho0), expected)
+    # unweighted (rho=None) is the plain mixing-ratio inventory and differs
+    assert np.isclose(diag.total_water_kg(st), float(q.sum() * g.cell_vol))
+    assert not np.isclose(diag.total_water_kg(st, rho0), diag.total_water_kg(st))
+    # a scalar weighting also works (Boussinesq)
+    assert np.isclose(diag.total_water_kg(st, 1.2), float((1.2 * q).sum() * g.cell_vol))
+
+
 def test_water_measure_label_present():
     cfg = _storm_cfg("anelastic", duration=30.0)
     g = Grid(nx=12, ny=12, nz=30, Lx=cfg.domain.Lx, Ly=cfg.domain.Ly, Lz=cfg.domain.Lz)

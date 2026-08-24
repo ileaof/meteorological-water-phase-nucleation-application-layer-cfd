@@ -67,11 +67,33 @@ def surface_water_kg(state: FlowState) -> float:
     return float(sum(np.asarray(v).sum() for v in sp.values()) * area)
 
 
-def total_water_kg(state: FlowState) -> float:
+def _rho_weight(rho, grid):
+    """Density weighting: None/scalar -> as-is; (nz,) profile -> (1,1,nz)."""
+    if rho is None:
+        return 1.0
+    if np.ndim(rho) == 0:
+        return float(rho)
+    return np.asarray(rho, dtype=float).reshape(1, 1, -1)
+
+
+def total_water_kg(state: FlowState, rho=None) -> float:
     """Complete water inventory [kg]: airborne (vapour + all hydrometeors) plus
-    the water already accumulated at the surface.  Sedimentation moves water from
-    airborne to surface, so the SUM is what a closed domain should conserve."""
-    return float(state.total_water()) + surface_water_kg(state)
+    the water accumulated at the surface.  Sedimentation moves water from airborne
+    to surface, so the SUM is what a closed domain should conserve.
+
+    ``rho`` is the density weighting used for the airborne term.  For the anelastic
+    system pass the reference-density PROFILE rho0(z) -- the transport conserves
+    ``int rho0 q``, so weighting by rho0(z) is what makes the budget consistent
+    (an unweighted sum spuriously drifts as water is redistributed vertically
+    through the rho0 gradient by a strong updraft; M6).
+    """
+    r = _rho_weight(rho, state.grid)
+    q = state.qv + state.ql + state.qi
+    for nm in ("qr", "qs", "qg", "qh"):
+        a = getattr(state, nm, None)
+        if a is not None:
+            q = q + a
+    return float((r * q).sum() * state.grid.cell_vol) + surface_water_kg(state)
 
 
 def mass_continuity_residual(state: FlowState, rho0_c=None, rho0_wface=None) -> dict:
@@ -124,22 +146,31 @@ def summary_stats(state: FlowState, nf: NucleationField) -> dict:
     }
 
 
-def conservation_budgets(state: FlowState, initial: dict, rho0: float) -> dict:
-    """Conservation diagnostics vs the initial state (absolute + relative).
+def _energy_budget(state: FlowState, rho) -> tuple:
+    """Density-weighted kinetic / potential / thermal energy [J].  ``rho`` is a
+    scalar (Boussinesq) or the reference-density PROFILE rho0(z) (anelastic), so
+    the budget is consistent with the mass the transport actually conserves."""
+    g = state.grid
+    dv = g.cell_vol
+    r = _rho_weight(rho, g)
+    umag2 = state.velocity_magnitude_center() ** 2          # (nx,ny,nz)
+    ke = 0.5 * float((r * umag2).sum() * dv)
+    zc = g.zc.reshape(1, 1, -1) * np.ones(g.center_shape)
+    pe = 9.81 * float((r * zc).sum() * dv)
+    th = 1005.0 * float((r * state.T).sum() * dv)
+    return ke, pe, th
+
+
+def conservation_budgets(state: FlowState, initial: dict, rho=None) -> dict:
+    """Conservation diagnostics vs the initial state (absolute + relative),
+    density-weighted by ``rho`` (scalar Boussinesq, or rho0(z) profile anelastic).
 
     NOTE: with open inflow/outflow boundaries these are NOT expected to be
     conserved (mass/energy flux through boundaries).  In a closed/periodic
     domain they should hold to discretization error.
     """
-    g = state.grid
-    dv = g.cell_vol
-    tw = total_water_kg(state)          # airborne (all species) + surface accumulation
-    ke = 0.5 * rho0 * float((state.u ** 2).sum() * (g.dx * g.dy * g.dz)
-                           + (state.v ** 2).sum() * (g.dx * g.dy * g.dz)
-                           + (state.w ** 2).sum() * (g.dx * g.dy * g.dz))
-    zc = g.zc.reshape(1, 1, -1)
-    pe = rho0 * 9.81 * float((zc * np.ones(g.center_shape)).sum() * dv)
-    th = rho0 * 1005.0 * float(state.T.sum() * dv)
+    tw = total_water_kg(state, rho)     # rho0-weighted airborne + surface accumulation
+    ke, pe, th = _energy_budget(state, rho)
     return {
         "total_water_kg": tw,
         "total_water_rel_err": (tw - initial["total_water"]) / max(abs(initial["total_water"]), 1e-12),
@@ -149,14 +180,9 @@ def conservation_budgets(state: FlowState, initial: dict, rho0: float) -> dict:
     }
 
 
-def initial_budgets(state: FlowState, rho0: float) -> dict:
-    g = state.grid
-    dv = g.cell_vol
-    tw = total_water_kg(state)          # airborne (all species) + surface accumulation
-    ke = 0.5 * rho0 * float((state.u ** 2).sum() + (state.v ** 2).sum() + (state.w ** 2).sum()) * dv
-    zc = g.zc.reshape(1, 1, -1)
-    pe = rho0 * 9.81 * float((zc * np.ones(g.center_shape)).sum() * dv)
-    th = rho0 * 1005.0 * float(state.T.sum() * dv)
+def initial_budgets(state: FlowState, rho=None) -> dict:
+    tw = total_water_kg(state, rho)
+    ke, pe, th = _energy_budget(state, rho)
     return {"total_water": tw, "total_energy": ke + pe + th,
             "kinetic_energy": ke, "potential_energy": pe, "thermal_energy": th}
 

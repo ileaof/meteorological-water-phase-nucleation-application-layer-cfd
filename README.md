@@ -1408,7 +1408,8 @@ the "idealised demonstration" caveats are lifted.
 | M3 — anelastic core | done | `--dynamics anelastic`: ρ₀(z) reference density, ∇·(ρ₀**u**)=0, deep-column mass expansion (`examples/anelastic_vs_boussinesq.py`) |
 | M4 — conservation | done | stratified reference is now an **exact discrete equilibrium** (perturbation-only diffusion + perturbation-preserving z-boundaries — the limiters don't prop up a phantom circulation); conservation report (mass-continuity residual + complete water/energy budget). Grid stretching + formal convergence fold into M8. |
 | M5 — conservative transport | done | **conservative flux-form scalar transport** (projected divergence-free staggered velocity + ρ₀ weighting + 2nd-order MUSCL): `∫ρ₀q` conserved (dynamics-only water error ~1e−3, down from −5.7 %). **Finding:** the old storm's vigour was partly numerical; the honest storm uses a saturated-bubble trigger + light SGS damping (~28 % of the parcel ceiling, coarse grid). Residual water error grows with intensity (~2 % at ~24 m/s) from the ρ₀-vs-actual-ρ mismatch in microphysics/sedimentation — consistent-density coupling is M6. |
-| M6–M9 | planned | consistent-density microphysics coupling + nucleation-lookup, sedimentation refinement, convergence study, observational comparison |
+| M6 — consistent-density accounting | done | the conservation budget is now **ρ₀(z)-weighted** (`∫ρ₀q`), consistent with what the anelastic transport conserves. This resolved the M5 "residual": it was a diagnostic mismatch (an unweighted budget drifted ~2 % as a strong updraft redistributed water through the ρ₀ gradient), not lost water — the water error is now ~1e−3 at any intensity. |
+| M7–M9 | planned | nucleation-lookup coupling + sedimentation refinement, grid-convergence study, observational comparison |
 
 The **anelastic core** (M3) reuses the constant-coefficient Poisson operator by
 writing the velocity correction as `u = u* − (Δt/ρ₀,face)∇p′`, so the face

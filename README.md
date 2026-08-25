@@ -1483,6 +1483,14 @@ Physical signature (dry-bubble comparison): the anelastic updraft ratio
 following the ρ₀(surface)/ρ₀(top) ≈ 3.4× mass-expansion scale — the effect the
 constant-density core structurally misses.
 
+<p align="center">
+  <img src="docs/media/storm_panel_w_Sw_qv.gif" width="820"
+       alt="Fine-grid anelastic storm: vertical velocity w, liquid supersaturation S_w and water vapour q_v evolving over 1200 s">
+  <br><em>Fine-grid stretched anelastic storm (48×48×64, z-stretch 1.06, 1200 s) —
+  vertical velocity <code>w</code>, liquid supersaturation <code>S_w</code> and water vapour
+  <code>q_v</code> (see §28.8). Full-resolution MP4s are written to the run's output directory.</em>
+</p>
+
 ### 28.8 Refined high-resolution run (verified output)
 
 The finest CPU-only mesh (48×48×64) with near-surface vertical refinement

@@ -1480,6 +1480,42 @@ Physical signature (dry-bubble comparison): the anelastic updraft ratio
 following the ρ₀(surface)/ρ₀(top) ≈ 3.4× mass-expansion scale — the effect the
 constant-density core structurally misses.
 
+### 28.8 Refined high-resolution run (verified output)
+
+The finest CPU-only mesh (48×48×64) with near-surface vertical refinement
+(`--z-stretch 1.06`) over a deep 18 km column, anelastic + two-way microphysics +
+Tecplot, to 1200 s:
+
+```bash
+python -m meteorological_flow.cli --storm-scale --dynamics anelastic --z-stretch 1.06 \
+    --Nx 48 --Ny 48 --Nz 64 --Lz 18000 --duration 1200 --tecplot \
+    --output outputs/storm_stretched_fine_grid
+```
+
+```
+=== meteorological_flow run complete ===
+  steps        : 5748   final t = 1200.00 s   max CFL: 0.240
+  grid         : 48 x 48 x 64   (z-stretch 1.06, Lz 18 km)   wall clock ~21 h
+  T range      : 213.5 .. 300.9 K
+  max |u|      : 55.6 m/s     max |w|: 55.6 m/s
+  max S_w/S_i  : 1.000 / 1.501
+  microphysics : two-way (hydrometeors + latent heat + sedimentation)
+  surface precip [mm]: rain 7.28e-3   total 7.28e-3
+  water rel err: -2.85e-4   energy rel err: 6.07e-3   solver resid: 3.79e-10
+  limitations  : idealised-demonstration caveats as in §24 / §28.6 (still qualitative)
+```
+
+**What this shows.** The refined mesh realises the resolution-dependence quantified
+by the convergence study (§28.7 / M8): resolving the updraft (and the near-surface
+layer via stretching) lifts the peak vertical velocity to **~56 m/s** — a strong,
+physically plausible deep updraft — where the coarse grid gave only ~10–24 m/s.
+Crucially, **conservation holds at this intensity**: the ρ₀-weighted water error is
+`−2.9e−4` and the projection residual `3.8e−10` (M5 conservative transport + M6
+density-consistent budget), so the vigour is physical, not numerical concentration.
+Cost: the fine near-surface cells force a small `dt` (5748 steps → ~21 h wall) — a
+serious run, not a quick demo. It is still an idealised demonstration (coarse
+horizontal Δx ≈ 330 m; the §24 caveats stand).
+
 ---
 
 *This unified manual ports the engine reference (`docs/MANUAL_met_h2o_nucleation.md`)

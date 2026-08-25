@@ -60,8 +60,9 @@ engine and the 3D Boussinesq mixing-chamber flow solver built around it.
 # Part I — The nucleation engine
 
 The application/diagnosis layer for the Ferreira Eq.39a/39b shifted-equilibrium
-framework (Physica B **695** (2024) 416494; MRS Meeting 2026). The validated
-physics core is bundled, imported read-only, and never modified.
+framework (Ferreira, I. L., *Physica B: Condensed Matter* **695** (2024) 416494;
+MRS Meeting 2026 — see [§19](#19-citation--license)). The validated physics core
+is bundled, imported read-only, and never modified.
 
 ## 1. What this module is
 
@@ -730,19 +731,21 @@ See `docs/MET_NUCLEATION_HYPOTHESES.md` for the full H1–H17 table.
 ## 19. Citation & license
 
 If you use this tool, please cite the underlying shifted-equilibrium framework:
-Ferreira, *Physica B: Condensed Matter* **695** (2024) 416494; and the MRS
-Meeting 2026 contribution on the meteorological water-phase nucleation
-application layer.
+
+> FERREIRA, I. L. *Assessment of Thermodynamic Variables Affecting Phase
+> Nucleation.* **Physica B: Condensed Matter**, v. 695, p. 416494, 2024.
+
+and the MRS Meeting 2026 contribution on the meteorological water-phase
+nucleation application layer.
 
 ```bibtex
-@article{ferreira2024shifted,
-  author  = {Ferreira},          % TODO: complete the author list
-  title   = {},                   % TODO: article title
+@article{ferreira2024assessment,
+  author  = {Ferreira, I. L.},
+  title   = {Assessment of Thermodynamic Variables Affecting Phase Nucleation},
   journal = {Physica B: Condensed Matter},
   volume  = {695},
   pages   = {416494},
-  year    = {2024},
-  doi     = {}                     % TODO
+  year    = {2024}
 }
 ```
 

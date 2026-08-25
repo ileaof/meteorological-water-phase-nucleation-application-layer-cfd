@@ -5,8 +5,9 @@ engine bundle lives under ``_engine/`` and is loaded **read-only** via
 ``importlib`` (it is SHA-256-guarded and never modified):
 
   * ``_engine/unified_h2o_nucleation_climate/unified_h2o_nucleation_climate.py``
-    — the validated shifted-equilibrium core (Ferreira Eq.39a/39b;
-    Physica B 695 (2024) 416494).
+    — the validated shifted-equilibrium core (Ferreira Eq.39a/39b).  Cite:
+    Ferreira, I. L., "Assessment of Thermodynamic Variables Affecting Phase
+    Nucleation", Physica B: Condensed Matter 695 (2024) 416494.
   * ``_engine/met_h2o_nucleation.py`` — the application / diagnosis layer
     (free-energy decomposition, precipitation diagnosis, I/O, visualisation).
   * ``_engine/het_contact_angle.py`` — heterogeneous contact-angle models.

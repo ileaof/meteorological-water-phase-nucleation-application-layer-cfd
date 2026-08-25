@@ -8,6 +8,7 @@ authors:
     affiliation: "UFPa / ITEC / FEM"
 preferred-citation:
   type: article
+  title: "Assessment of Thermodynamic Variables Affecting Phase Nucleation"
   authors:
     - family-names: Ferreira
       given-names: "I. L."
@@ -15,5 +16,4 @@ preferred-citation:
   volume: 695
   pages: "416494"
   year: 2024
-  # TODO: complete title, full author list and DOI from the published reference.
 notes: "MRS Meeting 2026 contribution on the meteorological water-phase nucleation application layer."

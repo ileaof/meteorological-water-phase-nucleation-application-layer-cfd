@@ -1491,6 +1491,11 @@ constant-density core structurally misses.
   <code>q_v</code> (see §28.8). Full-resolution MP4s are written to the run's output directory.</em>
 </p>
 
+> **Storm-simulation variables:** *w* is vertical air velocity (updrafts/downdrafts),
+> *S*ᵥ is water-vapor saturation ratio (>1 means supersaturation), and *q*ᵥ is
+> water-vapor mixing ratio. Together, they show moisture transport and regions
+> favorable to cloud formation.
+
 ### 28.8 Refined high-resolution run (verified output)
 
 The finest CPU-only mesh (48×48×64) with near-surface vertical refinement

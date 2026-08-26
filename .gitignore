@@ -49,6 +49,9 @@ src/met_water_nucleation/_engine/unified_h2o_nucleation_climate/README.md
 src/met_water_nucleation/_engine/unified_h2o_nucleation_climate/*.html
 src/met_water_nucleation/_engine/unified_h2o_nucleation_climate/unified_nucleation_out
 
+# --- Local-only work, kept out of version control ---
+/manuscript_apl/
+
 # --- Regenerated run outputs & logs (regenerable; keep out of version control) ---
 /out_met_nucleation/
 /outputs/cli_report.json

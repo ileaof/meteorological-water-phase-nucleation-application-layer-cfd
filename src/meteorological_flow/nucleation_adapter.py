@@ -147,7 +147,13 @@ class NucleationAdapter:
         T, P, pv = state.T, state.P_total, state.pv
 
         if self.method == "lookup" and self.lookup is not None:
-            self.lookup.fill_field(nf, T, P, pv, gradT, state)
+            # The lookup/interpolation layer (and the immutable engine it
+            # ultimately wraps) is CPU-only by design -- see backend.py's
+            # module docstring. T/P/pv/gradT may be GPU-resident; convert
+            # once here, at this call boundary, rather than inside the
+            # lookup table code.
+            to_cpu = state.grid.backend.to_cpu
+            self.lookup.fill_field(nf, to_cpu(T), to_cpu(P), to_cpu(pv), to_cpu(gradT), state)
         else:
             self._evaluate_direct(nf, T, P, pv, gradT, state)
 

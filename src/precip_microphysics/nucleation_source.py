@@ -46,13 +46,27 @@ TWOMEY_C = 1.0e8  # m^-3
 TWOMEY_K = 0.6
 
 
-def _arr(x):
-    return np.asarray(x, dtype=float)
+def _arr(x, xp=np):
+    return xp.asarray(x, dtype=float)
 
 
-def _fletcher_IN(T):
+def _fletcher_IN(T, xp=np):
     """Heterogeneous ice-nucleating-particle number [m^-3] (Fletcher 1962)."""
-    return C.FLETCHER_N0 * np.exp(C.FLETCHER_BETA * (C.T0 - _arr(T)))
+    return C.FLETCHER_N0 * xp.exp(C.FLETCHER_BETA * (C.T0 - _arr(T, xp)))
+
+
+def _poisson_draw(lam, rng, xp):
+    """Draw Poisson(lam) via the (CPU-only) numpy.random.Generator ``rng``.
+
+    ``lam`` may be GPU-resident (whatever backend ``st`` uses); numpy's RNG
+    cannot accept a cupy array, so it is converted to the host for this one
+    draw and the result uploaded back -- the stochastic-nucleation path
+    (``cfg.stochastic_nucleation``, default off) is the one place in this
+    package that genuinely needs a host round-trip, since there is no
+    GPU-native equivalent wired in here.
+    """
+    lam_host = lam.get() if hasattr(lam, "get") else np.asarray(lam)
+    return xp.asarray(rng.poisson(lam_host))
 
 
 def embryo_source(st, cfg, dt, cell_volume, J_liquid=None, J_ice=None, rng=None):
@@ -60,66 +74,73 @@ def embryo_source(st, cfg, dt, cell_volume, J_liquid=None, J_ice=None, rng=None)
 
     ``J_liquid`` / ``J_ice`` are the kernel nucleation rates [m^-3 s^-1] (finite
     where nucleation solved, else None/NaN).  ``cell_volume`` = dV [m^3].
+
+    ``J_liquid``/``J_ice`` are always host/NumPy (the nucleation lookup stays
+    CPU-side by design -- see backend.py); ``_arr(..., xp)`` uploads them to
+    ``st``'s backend when needed, which numpy/cupy both support (uploading a
+    host array to the device is the supported direction; only the reverse
+    implicit conversion is blocked).
     """
+    xp = st.xp
     T, P = st.T, st.P
-    rho = _arr(st.rho)
-    Sw = th.saturation_ratio_water(st.qv, T, P)
-    Si = th.saturation_ratio_ice(st.qv, T, P)
+    rho = _arr(st.rho, xp)
+    Sw = th.saturation_ratio_water(st.qv, T, P, xp=xp)
+    Si = th.saturation_ratio_ice(st.qv, T, P, xp=xp)
     transfers, diag = [], {}
 
     # ---- liquid embryos ----
     r_l = cfg.embryo_radius_liquid
     m_l = (4.0 / 3.0) * math.pi * r_l ** 3 * C.rho_w        # kg per droplet
     sw_super = Sw > 1.0
-    if np.any(sw_super):
+    if xp.any(sw_super):
         if cfg.activation_pathway in ("eq39", "homogeneous") and J_liquid is not None:
-            Jl = np.where(np.isfinite(_arr(J_liquid)), _arr(J_liquid), 0.0)
+            Jl = xp.where(xp.isfinite(_arr(J_liquid, xp)), _arr(J_liquid, xp), 0.0)
             N_exp = Jl * dt                                  # intensive [m^-3]
             if cfg.stochastic_nucleation and rng is not None:
-                lam = np.clip(Jl * cell_volume * dt, 0.0, 1.0e18)
-                N_int = rng.poisson(lam) / max(cell_volume, C.TINY)
+                lam = xp.clip(Jl * cell_volume * dt, 0.0, 1.0e18)
+                N_int = _poisson_draw(lam, rng, xp) / max(cell_volume, C.TINY)
             else:
                 N_int = N_exp
         else:  # CCN pathway (Twomey)
-            s_pct = np.maximum((Sw - 1.0) * 100.0, 0.0)
+            s_pct = xp.maximum((Sw - 1.0) * 100.0, 0.0)
             N_int = TWOMEY_C * s_pct ** TWOMEY_K
             N_exp = N_int
-        N_act = np.where(sw_super, np.minimum(N_int, NC_MAX), 0.0)
-        dq_raw = N_act * m_l / np.maximum(rho, C.TINY)
-        avail = np.maximum(_arr(st.qv) - th.qsat_water(T, P), 0.0) if cfg.vapour_limited \
+        N_act = xp.where(sw_super, xp.minimum(N_int, NC_MAX), 0.0)
+        dq_raw = N_act * m_l / xp.maximum(rho, C.TINY)
+        avail = xp.maximum(_arr(st.qv, xp) - th.qsat_water(T, P, xp=xp), 0.0) if cfg.vapour_limited \
             else dq_raw
-        dq = np.clip(np.minimum(dq_raw, avail), 0.0, None)
-        if np.any(dq > 0):
+        dq = xp.clip(xp.minimum(dq_raw, avail), 0.0, None)
+        if xp.any(dq > 0):
             transfers.append(Transfer("qv", "qc", dq, "nucleation_liquid"))
-        diag["N_expected_liquid"] = np.where(sw_super, N_exp * cell_volume, 0.0)
-        diag["N_activated_liquid"] = dq * np.maximum(rho, C.TINY) / m_l
+        diag["N_expected_liquid"] = xp.where(sw_super, N_exp * cell_volume, 0.0)
+        diag["N_activated_liquid"] = dq * xp.maximum(rho, C.TINY) / m_l
 
     # ---- ice embryos ----
     r_i = cfg.embryo_radius_ice
     m_i = (4.0 / 3.0) * math.pi * r_i ** 3 * C.rho_i
-    cold = _arr(T) < C.T0
+    cold = _arr(T, xp) < C.T0
     si_super = (Si > 1.0) & cold
-    if np.any(si_super):
+    if xp.any(si_super):
         if cfg.activation_pathway == "eq39" and J_ice is not None:
-            Ji = np.where(np.isfinite(_arr(J_ice)), _arr(J_ice), 0.0)
+            Ji = xp.where(xp.isfinite(_arr(J_ice, xp)), _arr(J_ice, xp), 0.0)
             N_exp = Ji * dt
             if cfg.stochastic_nucleation and rng is not None:
-                lam = np.clip(Ji * cell_volume * dt, 0.0, 1.0e18)
-                N_int = rng.poisson(lam) / max(cell_volume, C.TINY)
+                lam = xp.clip(Ji * cell_volume * dt, 0.0, 1.0e18)
+                N_int = _poisson_draw(lam, rng, xp) / max(cell_volume, C.TINY)
             else:
                 N_int = N_exp
         else:  # heterogeneous IN spectrum (Fletcher) or homogeneous gate
-            N_int = _fletcher_IN(T)
+            N_int = _fletcher_IN(T, xp)
             N_exp = N_int
-        N_act = np.where(si_super, np.minimum(N_int, NI_MAX), 0.0)
-        dq_raw = N_act * m_i / np.maximum(rho, C.TINY)
-        avail = np.maximum(_arr(st.qv) - th.qsat_ice(T, P), 0.0) if cfg.vapour_limited \
+        N_act = xp.where(si_super, xp.minimum(N_int, NI_MAX), 0.0)
+        dq_raw = N_act * m_i / xp.maximum(rho, C.TINY)
+        avail = xp.maximum(_arr(st.qv, xp) - th.qsat_ice(T, P, xp=xp), 0.0) if cfg.vapour_limited \
             else dq_raw
-        dq = np.clip(np.minimum(dq_raw, avail), 0.0, None)
-        if np.any(dq > 0):
+        dq = xp.clip(xp.minimum(dq_raw, avail), 0.0, None)
+        if xp.any(dq > 0):
             transfers.append(Transfer("qv", "qi", dq, "nucleation_ice"))
-        diag["N_expected_ice"] = np.where(si_super, N_exp * cell_volume, 0.0)
-        diag["N_activated_ice"] = dq * np.maximum(rho, C.TINY) / m_i
+        diag["N_expected_ice"] = xp.where(si_super, N_exp * cell_volume, 0.0)
+        diag["N_activated_ice"] = dq * xp.maximum(rho, C.TINY) / m_i
 
     return transfers, diag
 

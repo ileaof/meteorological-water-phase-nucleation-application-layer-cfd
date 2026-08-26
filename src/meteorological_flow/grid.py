@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
+from .backend import Backend, get_backend
 
 
 @dataclass
@@ -26,31 +26,35 @@ class Grid:
     z_stretch: float = 1.0      # >1 clusters levels near the surface (finer dz low,
                                 # coarser aloft); 1.0 = uniform (default, unchanged)
     periodic: bool = False      # periodic lateral (x,y) boundaries (mean-wind storm)
+    backend: Backend | None = None   # None -> CPU (every existing call site unaffected)
 
     def __post_init__(self):
+        if self.backend is None:
+            self.backend = get_backend("cpu")
+        xp = self.xp = self.backend.xp
         self.dx = self.Lx / self.nx
         self.dy = self.Ly / self.ny
         self.dz = self.Lz / self.nz               # uniform reference spacing [m]
-        self.xc = (np.arange(self.nx) + 0.5) * self.dx
-        self.yc = (np.arange(self.ny) + 0.5) * self.dy
-        self.xf = np.linspace(0.0, self.Lx, self.nx + 1)
-        self.yf = np.linspace(0.0, self.Ly, self.ny + 1)
+        self.xc = (xp.arange(self.nx) + 0.5) * self.dx
+        self.yc = (xp.arange(self.ny) + 0.5) * self.dy
+        self.xf = xp.linspace(0.0, self.Lx, self.nx + 1)
+        self.yf = xp.linspace(0.0, self.Ly, self.ny + 1)
         # vertical levels: uniform, or geometrically stretched (dz_k = dz0 * r^k).
         if self.z_stretch == 1.0:
-            self.zf = np.linspace(0.0, self.Lz, self.nz + 1)
-            self.zc = (np.arange(self.nz) + 0.5) * self.dz
+            self.zf = xp.linspace(0.0, self.Lz, self.nz + 1)
+            self.zc = (xp.arange(self.nz) + 0.5) * self.dz
         else:
-            w = self.z_stretch ** np.arange(self.nz)          # relative cell heights
-            edges = np.concatenate([[0.0], np.cumsum(w)])
+            w = self.z_stretch ** xp.arange(self.nz)          # relative cell heights
+            edges = xp.concatenate([xp.asarray([0.0]), xp.cumsum(w)])
             self.zf = self.Lz * edges / edges[-1]
             self.zc = 0.5 * (self.zf[:-1] + self.zf[1:])
         self.stretched = self.z_stretch != 1.0
         # dz arrays: cell heights dz_c (nz) and centre-to-centre spacings on the
         # z-faces dzc_f (nz+1).  For uniform these equal the scalar dz exactly, so
         # every operator below is byte-identical to the previous scalar-dz version.
-        self.dz_c = np.diff(self.zf)                          # (nz,) cell heights
-        self.dzc_f = np.empty(self.nz + 1)                    # (nz+1,) centre spacings
-        self.dzc_f[1:-1] = np.diff(self.zc)
+        self.dz_c = xp.diff(self.zf)                          # (nz,) cell heights
+        self.dzc_f = xp.empty(self.nz + 1)                    # (nz+1,) centre spacings
+        self.dzc_f[1:-1] = xp.diff(self.zc)
         self.dzc_f[0] = self.dz_c[0]                          # boundary (Neumann grad=0)
         self.dzc_f[-1] = self.dz_c[-1]
         self.cell_vol = self.dx * self.dy * self.dz           # scalar (uniform value)
@@ -74,7 +78,7 @@ class Grid:
         return (self.nx, self.ny, self.nz + 1)
 
     def zeros_c(self):
-        return np.zeros(self.center_shape)
+        return self.xp.zeros(self.center_shape)
 
     # ---- divergence of a face velocity field -> cell centres ----
     def divergence(self, u, v, w):
@@ -90,7 +94,7 @@ class Grid:
         """dp/dx on x-faces (nx+1,ny,nz).  Interior: central; boundary faces are
         0 (Neumann) by default, or the periodic wrap (p[0]-p[nx-1])/dx when the
         grid is periodic (face 0 == face nx)."""
-        g = np.zeros(self.u_shape)
+        g = self.xp.zeros(self.u_shape)
         g[1:-1, :, :] = (p[1:, :, :] - p[:-1, :, :]) / self.dx
         if self.periodic:
             wrap = (p[0, :, :] - p[-1, :, :]) / self.dx
@@ -98,7 +102,7 @@ class Grid:
         return g
 
     def grad_y_faces(self, p):
-        g = np.zeros(self.v_shape)
+        g = self.xp.zeros(self.v_shape)
         g[:, 1:-1, :] = (p[:, 1:, :] - p[:, :-1, :]) / self.dy
         if self.periodic:
             wrap = (p[:, 0, :] - p[:, -1, :]) / self.dy
@@ -106,28 +110,28 @@ class Grid:
         return g
 
     def grad_z_faces(self, p):
-        g = np.zeros(self.w_shape)
+        g = self.xp.zeros(self.w_shape)
         spacing = self.dz if not self.stretched else self.dzc_f[None, None, 1:-1]
         g[:, :, 1:-1] = (p[:, :, 1:] - p[:, :, :-1]) / spacing
         return g
 
     # ---- interpolate cell-centre scalar to face centres (simple average) ----
     def interp_c_to_ufaces(self, f):
-        out = np.empty(self.u_shape)
+        out = self.xp.empty(self.u_shape)
         out[1:-1, :, :] = 0.5 * (f[:-1, :, :] + f[1:, :, :])
         out[0, :, :] = f[0, :, :]
         out[-1, :, :] = f[-1, :, :]
         return out
 
     def interp_c_to_vfaces(self, f):
-        out = np.empty(self.v_shape)
+        out = self.xp.empty(self.v_shape)
         out[:, 1:-1, :] = 0.5 * (f[:, :-1, :] + f[:, 1:, :])
         out[:, 0, :] = f[:, 0, :]
         out[:, -1, :] = f[:, -1, :]
         return out
 
     def interp_c_to_wfaces(self, f):
-        out = np.empty(self.w_shape)
+        out = self.xp.empty(self.w_shape)
         out[:, :, 1:-1] = 0.5 * (f[:, :, :-1] + f[:, :, 1:])
         out[:, :, 0] = f[:, :, 0]
         out[:, :, -1] = f[:, :, -1]
@@ -140,24 +144,24 @@ class Grid:
         gx = self._central_x(f)
         gy = self._central_y(f)
         gz = self._central_z(f)
-        return np.sqrt(gx * gx + gy * gy + gz * gz)
+        return self.xp.sqrt(gx * gx + gy * gy + gz * gz)
 
     def _central_x(self, f):
-        g = np.zeros_like(f)
+        g = self.xp.zeros_like(f)
         g[1:-1, :, :] = (f[2:, :, :] - f[:-2, :, :]) / (2 * self.dx)
         g[0, :, :] = (f[1, :, :] - f[0, :, :]) / self.dx
         g[-1, :, :] = (f[-1, :, :] - f[-2, :, :]) / self.dx
         return g
 
     def _central_y(self, f):
-        g = np.zeros_like(f)
+        g = self.xp.zeros_like(f)
         g[:, 1:-1, :] = (f[:, 2:, :] - f[:, :-2, :]) / (2 * self.dy)
         g[:, 0, :] = (f[:, 1, :] - f[:, 0, :]) / self.dy
         g[:, -1, :] = (f[:, -1, :] - f[:, -2, :]) / self.dy
         return g
 
     def _central_z(self, f):
-        g = np.zeros_like(f)
+        g = self.xp.zeros_like(f)
         if not self.stretched:
             g[:, :, 1:-1] = (f[:, :, 2:] - f[:, :, :-2]) / (2 * self.dz)
             g[:, :, 0] = (f[:, :, 1] - f[:, :, 0]) / self.dz
@@ -171,7 +175,7 @@ class Grid:
     def laplacian(self, f):
         """5/7-point Laplacian of a cell-centred scalar (used by diffusion).
         Lateral boundaries: one-sided (Neumann) by default, or periodic wrap."""
-        g = np.zeros_like(f)
+        g = self.xp.zeros_like(f)
         g[1:-1, :, :] += (f[2:, :, :] - 2 * f[1:-1, :, :] + f[:-2, :, :]) / self.dx ** 2
         g[:, 1:-1, :] += (f[:, 2:, :] - 2 * f[:, 1:-1, :] + f[:, :-2, :]) / self.dy ** 2
         if self.periodic:

@@ -117,12 +117,19 @@ class NucleationConfig:
 
 
 @dataclass
+class PerformanceConfig:
+    device: str = "auto"                 # auto | cpu | gpu (GPU is optional; see backend.py)
+    compute_threads: int | None = None   # BLAS/OpenMP thread cap for the solver; None=library default
+
+
+@dataclass
 class OutputConfig:
     outdir: str = "outputs/flow_reference"
     interval_steps: int = 20
     format: list[str] = field(default_factory=lambda: ["netcdf", "json", "csv"])
     figures: list[str] = field(default_factory=lambda: ["slices", "vectors", "budgets"])
     restart: bool = True
+    animate: bool = False   # build per-field + combined-panel MP4/GIF after the run (see animate.py)
 
 
 @dataclass
@@ -135,6 +142,7 @@ class SimulationConfig:
     boundaries: BoundaryConfig = field(default_factory=BoundaryConfig)
     nucleation: NucleationConfig = field(default_factory=NucleationConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
+    performance: PerformanceConfig = field(default_factory=PerformanceConfig)
     random_seed: int = 20260820
 
 
@@ -219,7 +227,13 @@ def from_dict(d: dict[str, Any]) -> SimulationConfig:
                               interval_steps=int(_get(ou, "interval_steps", 20)),
                               format=list(_get(ou, "format", ["netcdf", "json", "csv"])),
                               figures=list(_get(ou, "figures", ["slices", "vectors", "budgets"])),
-                              restart=bool(_get(ou, "restart", True)))
+                              restart=bool(_get(ou, "restart", True)),
+                              animate=bool(_get(ou, "animate", False)))
+    pf = _get(d, "performance", {})
+    _ct = _get(pf, "compute_threads", None)
+    cfg.performance = PerformanceConfig(
+        device=str(_get(pf, "device", "auto")),
+        compute_threads=(int(_ct) if _ct is not None else None))
     cfg.random_seed = int(_get(d, "random_seed", 20260820))
     validate(cfg)
     return cfg
@@ -246,6 +260,10 @@ def validate(cfg: SimulationConfig) -> None:
         "precision must be float32 or float64"
     assert cfg.physics.dynamics in ("boussinesq", "anelastic"), \
         "dynamics must be boussinesq or anelastic"
+    assert cfg.performance.device in ("auto", "cpu", "gpu"), \
+        "performance.device must be auto, cpu or gpu"
+    assert cfg.performance.compute_threads is None or cfg.performance.compute_threads > 0, \
+        "performance.compute_threads must be a positive integer or unset"
     assert 0 < cfg.time.cfl <= 1.0, "CFL must be in (0, 1]"
     assert cfg.time.dt_max > 0 and cfg.time.duration >= 0
     assert cfg.flow.advection_order in (1, 2)
@@ -281,10 +299,15 @@ _N_FIELDS_ESTIMATE = 45
 
 
 def estimate_memory_gb(cfg: SimulationConfig, n_fields: int = _N_FIELDS_ESTIMATE,
-                       safety: float = 2.0) -> float:
+                       safety: float = 2.0, device: str = "cpu") -> float:
     """Rough field-memory estimate [GB] = N_cells * n_fields * bytes * safety.
     Note: the direct pressure factorisation (splu, used only for grids <= ~40^3)
-    can add substantial fill-in beyond this; large grids use iterative CG."""
+    can add substantial fill-in beyond this; large grids use iterative CG.
+
+    ``device`` is accepted for API symmetry with the GPU-VRAM preflight check
+    (:func:`meteorological_flow.backend.check_gpu_memory`) -- the field-count/
+    byte/safety formula itself is backend-agnostic (same fields, same dtype,
+    whether they live in host or device memory), so it is currently unused."""
     n = cfg.grid.nx * cfg.grid.ny * cfg.grid.nz
     bytes_per = 4 if cfg.physics.precision == "float32" else 8
     return n * n_fields * bytes_per * safety / 1e9
@@ -305,6 +328,9 @@ def format_geometry(cfg: SimulationConfig) -> str:
             mem, cfg.physics.precision, _N_FIELDS_ESTIMATE, 2.0),
         "time       : cfl=%.2f dt_max=%.3g s duration=%.1f s" % (
             cfg.time.cfl, cfg.time.dt_max, cfg.time.duration),
+        "device     : %s%s" % (cfg.performance.device,
+            "" if cfg.performance.compute_threads is None
+            else " (compute_threads=%d)" % cfg.performance.compute_threads),
     ]
     return "\n".join("  " + ln for ln in lines)
 
@@ -378,7 +404,11 @@ def apply_overrides(cfg: SimulationConfig, *,
                    periodic: bool = False,
                    kernel_nucleation: bool = False,
                    method: str | None = None,
-                   threads: int | None = None) -> SimulationConfig:
+                   threads: int | None = None,
+                   device: str | None = None,
+                   compute_threads: int | None = None,
+                   precision: str | None = None,
+                   animate: bool = False) -> SimulationConfig:
     """Return a copy of cfg with CLI overrides applied.  Precedence (low->high):
     preset -> storm_scale -> grid_resolution -> explicit Lx/Ly/Lz/Nx/Ny/Nz."""
     cfg = copy.deepcopy(cfg)
@@ -426,8 +456,19 @@ def apply_overrides(cfg: SimulationConfig, *,
         cfg.time.dt_max = float(dt_max)
     if sgs is not None:
         cfg.flow.nu = cfg.flow.kappa = float(sgs)   # subgrid eddy viscosity/diffusivity
-    if float32:
+    # precision: --precision supersedes the older --float32 flag; both may be
+    # given together only if they agree (mirrors the pressure_drop/gradient
+    # mutual-exclusion pattern below).
+    if precision is not None and float32 and precision != "float32":
+        raise ValueError("--float32 conflicts with --precision %s" % precision)
+    if precision is not None:
+        cfg.physics.precision = str(precision)
+    elif float32:
         cfg.physics.precision = "float32"
+    if device is not None:
+        cfg.performance.device = str(device)
+    if compute_threads is not None:
+        cfg.performance.compute_threads = int(compute_threads)
     # pressure forcing: total drop [Pa] vs gradient [Pa/m] (mutually exclusive).
     # Increasing Lx at fixed drop lowers the gradient -- surfaced here explicitly.
     if pressure_drop is not None and pressure_gradient is not None:
@@ -454,6 +495,8 @@ def apply_overrides(cfg: SimulationConfig, *,
         cfg.physics.dynamics = str(dynamics)
     if tecplot and "tecplot" not in cfg.output.format:
         cfg.output.format = list(cfg.output.format) + ["tecplot"]
+    if animate:
+        cfg.output.animate = True
     if periodic:
         # periodic lateral boundaries (mean-wind / shear storm): the environmental
         # wind is ingested and the projection/advection wrap in x and y.
@@ -481,6 +524,7 @@ __all__ = [
     "LookupConfig",
     "NucleationConfig",
     "OutputConfig",
+    "PerformanceConfig",
     "PhysicsConfig",
     "SimulationConfig",
     "TimeConfig",

@@ -39,27 +39,28 @@ class BulkMicrophysics:
 
     # ---- apply one transfer with conservation + latent heat ----
     def _apply(self, st, tr):
-        src = np.asarray(getattr(st, tr.src), dtype=float)
-        dq = np.clip(np.asarray(tr.dq, dtype=float), 0.0, None)
-        dq = np.minimum(dq, np.maximum(src, 0.0))          # re-cap at apply time
-        if not np.any(dq > 0):
+        xp = st.xp
+        src = xp.asarray(getattr(st, tr.src), dtype=float)
+        dq = xp.clip(xp.asarray(tr.dq, dtype=float), 0.0, None)
+        dq = xp.minimum(dq, xp.maximum(src, 0.0))          # re-cap at apply time
+        if not xp.any(dq > 0):
             return 0.0
         setattr(st, tr.src, src - dq)
-        setattr(st, tr.dst, np.asarray(getattr(st, tr.dst), dtype=float) + dq)
+        setattr(st, tr.dst, xp.asarray(getattr(st, tr.dst), dtype=float) + dq)
         rs, rd = _RANK[tr.src], _RANK[tr.dst]
         if rs != rd:
             _, L = _LKIND[frozenset({rs, rd})]
             sign = 1.0 if rd > rs else -1.0                # denser => warming
-            st.T = np.asarray(st.T, dtype=float) + sign * (L / C.cp_d) * dq
-            self._latent += float(np.sum(sign * (L / C.cp_d) * dq))
-        return float(np.sum(dq))
+            st.T = xp.asarray(st.T, dtype=float) + sign * (L / C.cp_d) * dq
+            self._latent += float(xp.sum(sign * (L / C.cp_d) * dq))
+        return float(xp.sum(dq))
 
     def step(self, st, dt, cell_volume=None, J_liquid=None, J_ice=None):
         """Advance the microphysical state by ``dt`` (no sedimentation here;
         that is a separate column operator).  Returns a budget dict."""
         cfg = self.cfg
         if cell_volume is None:
-            cell_volume = float(np.asarray(st.dz).mean()) ** 3 if np.ndim(st.dz) else st.dz ** 3
+            cell_volume = float(st.dz.mean()) ** 3 if np.ndim(st.dz) else st.dz ** 3
         water0 = st.water_path()
         self._latent = 0.0
         budget = {}

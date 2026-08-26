@@ -33,18 +33,19 @@ def diffuse_center(s: np.ndarray, grid: Grid, kappa: float, dt: float,
 def _center_to_faces(tend_c: np.ndarray, grid: Grid, axis: int) -> np.ndarray:
     """Map a cell-centre tendency to the staggered face grid by averaging
     adjacent cells (one-sided at boundaries)."""
+    xp = grid.xp
     if axis == 0:
-        out = np.zeros(grid.u_shape)
+        out = xp.zeros(grid.u_shape)
         out[1:-1, :, :] = 0.5 * (tend_c[:-1, :, :] + tend_c[1:, :, :])
         out[0, :, :] = tend_c[0, :, :]
         out[-1, :, :] = tend_c[-1, :, :]
     elif axis == 1:
-        out = np.zeros(grid.v_shape)
+        out = xp.zeros(grid.v_shape)
         out[:, 1:-1, :] = 0.5 * (tend_c[:, :-1, :] + tend_c[:, 1:, :])
         out[:, 0, :] = tend_c[:, 0, :]
         out[:, -1, :] = tend_c[:, -1, :]
     else:
-        out = np.zeros(grid.w_shape)
+        out = xp.zeros(grid.w_shape)
         out[:, :, 1:-1] = 0.5 * (tend_c[:, :, :-1] + tend_c[:, :, 1:])
         out[:, :, 0] = tend_c[:, :, 0]
         out[:, :, -1] = tend_c[:, :, -1]

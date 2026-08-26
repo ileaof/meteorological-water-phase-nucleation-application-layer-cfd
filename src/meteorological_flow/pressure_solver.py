@@ -32,16 +32,54 @@ class PressureSolver:
     def __init__(self, grid: Grid, method: str = "cg", tol: float = 1e-6,
                  maxiter: int = 800, dirichlet_top: bool = False):
         self.grid = grid
+        self.backend = grid.backend
+        self.xp = grid.xp
+        stretched = getattr(grid, "stretched", False)
+        if self.backend.name == "gpu":
+            if stretched:
+                # CG is not guaranteed to converge on the asymmetric
+                # stretched-grid vertical operator (see _build()'s comment
+                # below) -- this is a property of the operator itself, not a
+                # GPU-specific issue, so a stretched grid always uses the
+                # direct CPU solve regardless of backend, exactly like the
+                # CPU heuristic in _pressure_method() already does. Only the
+                # small (n,)-sized RHS/solution vectors cross the host/device
+                # boundary each step -- never the operator or any 3-D field.
+                if method != "direct":
+                    print(f"[pressure_solver] GPU backend + stretched grid: forcing "
+                          f"the direct CPU solve (requested method={method!r}) -- CG "
+                          f"is not appropriate for the asymmetric stretched-grid "
+                          f"operator; only the small RHS/solution vectors cross the "
+                          f"host/device boundary each step, not the 3-D fields.")
+                method = "direct"
+            elif method != "cg":
+                # CuPy has no GPU-native direct sparse LU solver equivalent to
+                # scipy's splu (only iterative solvers) -- explicit, logged,
+                # one-time-per-run behavioural difference from the CPU
+                # heuristic in _pressure_method(), not a silent fallback.
+                print(f"[pressure_solver] GPU backend: using iterative CG for the "
+                      f"pressure Poisson solve (requested method={method!r} has no "
+                      f"GPU-native direct-solver equivalent to scipy's splu).")
+                method = "cg"
         self.method = method
         self.tol = tol
         self.maxiter = maxiter
         self.dirichlet_top = dirichlet_top   # p'=0 at the top (open pressure outlet)
         self.n = grid.nx * grid.ny * grid.nz
+        # the Laplacian is ALWAYS assembled on the host via scipy: _build() is a
+        # one-time (not per-step) triple Python loop over cell indices -- index
+        # bookkeeping, not math, so there is no vectorisation/GPU win from moving
+        # it, and scipy's COO/CSR builders are the simplest correct way to do it.
         self.A = self._build()           # A = -lap (positive semi-definite) + pin
         self._lu = None
         if method == "direct":
-            # cached LU factorisation of the (regularised) SPD operator
+            # cached LU factorisation of the (regularised) SPD operator.
+            # Always CPU/scipy -- see the stretched-grid note above.
             self._lu = spla.splu(self.A.tocsc())
+        if self.backend.name == "gpu" and method != "direct":
+            # only move the operator to the GPU when the CG path actually
+            # uses it there; the direct path keeps everything on the host.
+            self.A = self.backend.sparse.csr_matrix(self.A)
         self.last_residual = 0.0
         self.last_iters = 0
 
@@ -54,7 +92,11 @@ class PressureSolver:
         # z-operator (1/dz_c) d/dz(dp/dz) is asymmetric under stretching, so a
         # stretched grid uses the direct (splu) solver -- see _pick_method.
         stretched = getattr(g, "stretched", False)
-        dz_c, dzc_f = (g.dz_c, g.dzc_f) if stretched else (None, None)
+        # this loop is host-only (see __init__'s comment); dz_c/dzc_f may be
+        # GPU-resident, so pull the (tiny, (nz,)/(nz+1,)-sized) profiles to the
+        # host once here rather than indexing a device array per cell below.
+        dz_c = g.backend.to_cpu(g.dz_c) if stretched else None
+        dzc_f = g.backend.to_cpu(g.dzc_f) if stretched else None
         periodic = getattr(g, "periodic", False)   # wrap x/y neighbours
         top_cells = set()
         for i in range(nx):
@@ -94,7 +136,16 @@ class PressureSolver:
         return A
 
     def solve(self, rhs: np.ndarray):
-        rhs = rhs.reshape(-1).astype(float)
+        xp = self.xp
+        # direct solve is always host/scipy (splu); when the rest of the
+        # solver is on GPU (stretched grid, see __init__), only this small
+        # (n,)-sized RHS/solution vector crosses the host/device boundary --
+        # never the operator or any 3-D field.
+        use_host = (self.method == "direct" and self._lu is not None
+                   and self.backend.name == "gpu")
+        work_xp = np if use_host else xp
+        rhs = self.backend.to_cpu(rhs) if use_host else xp.asarray(rhs)
+        rhs = work_xp.asarray(rhs).reshape(-1).astype(float)
         if self.dirichlet_top:
             # zero the RHS at Dirichlet (top) cells so p_top = 0
             nz = self.grid.nz
@@ -106,20 +157,23 @@ class PressureSolver:
             rhs = rhs - rhs.mean()           # compatibility with all-Neumann
         if self.method == "direct" and self._lu is not None:
             p = self._lu.solve(rhs)
-            self.last_residual = float(np.linalg.norm(self.A @ p - rhs))
+            self.last_residual = float(work_xp.linalg.norm(self.A @ p - rhs))
             self.last_iters = 0
         else:
             # CG on the positive (regularised) operator with Jacobi precond
             diag = self.A.diagonal()
-            M = spla.LinearOperator(self.A.shape, matvec=lambda x: x / diag)
-            p, info = spla.cg(self.A, rhs, M=M, rtol=self.tol, atol=0.0, maxiter=self.maxiter)
-            self.last_residual = float(np.linalg.norm(self.A @ p - rhs))
+            M = self.backend.sparse_linalg.LinearOperator(self.A.shape, matvec=lambda x: x / diag)
+            p, info = self.backend.sparse_linalg.cg(self.A, rhs, M=M, rtol=self.tol,
+                                                     atol=0.0, maxiter=self.maxiter)
+            self.last_residual = float(work_xp.linalg.norm(self.A @ p - rhs))
             self.last_iters = int(self.maxiter if info else 0)
             if info:
                 # did not fully converge; keep the best iterate
                 pass
         if not self.dirichlet_top:
             p = p - p.mean()
+        if use_host:
+            p = xp.asarray(p)   # back to the solver's normal backend for the caller
         return p.reshape(self.grid.center_shape), self.last_residual, self.last_iters
 
     def project(self, state: FlowState, dt: float, rho0: float):
@@ -162,8 +216,9 @@ class PressureSolver:
         rho0_wface : (nz+1,) reference density on the z-faces (w-points).
         """
         g = self.grid
-        rc = np.asarray(rho0_c, dtype=float).reshape(1, 1, -1)      # (1,1,nz)
-        rwf = np.asarray(rho0_wface, dtype=float).reshape(1, 1, -1)  # (1,1,nz+1)
+        xp = self.xp
+        rc = xp.asarray(rho0_c, dtype=float).reshape(1, 1, -1)      # (1,1,nz)
+        rwf = xp.asarray(rho0_wface, dtype=float).reshape(1, 1, -1)  # (1,1,nz+1)
         # density-weighted divergence  div(rho0 u*).  rho0 = rho0(z) is constant
         # in x,y at each level, so the horizontal terms factor rho0_c(k); the
         # vertical term uses the face density on the staggered w-points.

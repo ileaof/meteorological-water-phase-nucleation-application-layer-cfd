@@ -10,6 +10,12 @@
 numpy>=1.20
 scipy            # core: Brent root-finding (scipy.optimize.brentq)
 matplotlib       # core: imported at load (uses the headless "Agg" backend)
+threadpoolctl    # meteorological_flow: runtime BLAS/OpenMP thread control (--compute-threads)
+
+# --- Optional (GPU acceleration for meteorological_flow, --device gpu) ----
+# cupy-cuda12x   : install manually if you have an NVIDIA GPU; see
+#                  `pip install met_water_nucleation[gpu]` / pyproject.toml.
+#                  Never required for CPU-only use.
 
 # --- Optional (NetCDF / GRIB ingestion & export) --------------------------
 # xarray   : NetCDF ingestion & report export (example_met_xarray_netcdf.py)

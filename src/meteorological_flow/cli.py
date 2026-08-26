@@ -14,6 +14,7 @@ import os
 import sys
 
 from . import config as cfgmod
+from .backend import BackendError, get_backend
 from .simulation import Simulation, _grid_from_config
 
 
@@ -50,7 +51,20 @@ def build_argparser() -> argparse.ArgumentParser:
     grp.add_argument("--pressure-gradient", type=float, default=None, dest="pressure_gradient",
                      help="pressure gradient [Pa/m] (drop = gradient * Lx)")
     p.add_argument("--float32", action="store_true",
-                   help="performance mode: store the prognostic state in float32")
+                   help="performance mode: store the prognostic state in float32 "
+                        "(equivalent to --precision float32; see --precision)")
+    p.add_argument("--precision", choices=("float64", "float32"), default=None,
+                   help="numerical precision. float64 is the scientific default "
+                        "and required for validated results; float32 is an "
+                        "explicit performance opt-in. Supersedes --float32.")
+    p.add_argument("--device", choices=("auto", "cpu", "gpu"), default=None,
+                   help="execution backend: auto-detect (default), force CPU, or "
+                        "force GPU (fails loudly if unavailable -- never silently "
+                        "falls back to CPU)")
+    p.add_argument("--compute-threads", type=int, default=None, dest="compute_threads",
+                   help="BLAS/OpenMP thread cap for the per-step solver (CPU path). "
+                        "Distinct from --threads, which is for the offline "
+                        "nucleation lookup-table build only.")
     p.add_argument("--max-memory-gb", type=float, default=16.0, dest="max_memory_gb",
                    help="refuse to run if the estimated field memory exceeds this "
                         "(override with --force)")
@@ -60,7 +74,8 @@ def build_argparser() -> argparse.ArgumentParser:
     p.add_argument("--output-interval", type=int, default=None,
                    help="output + nucleation cadence [steps]")
     p.add_argument("--threads", type=int, default=None,
-                   help="threads for lookup-table build")
+                   help="threads for the OFFLINE nucleation lookup-table build "
+                        "(not the per-step solver; see --compute-threads)")
     p.add_argument("--no-microphysics", action="store_true",
                    help="pure flow; no nucleation evaluation")
     p.add_argument("--one-way-coupling", action="store_true",
@@ -86,6 +101,13 @@ def build_argparser() -> argparse.ArgumentParser:
     p.add_argument("--tecplot", action="store_true",
                    help="also write Tecplot 360 ASCII flow.dat (ORDERED/POINT zones, "
                         "STRANDID time animation) alongside the NetCDF output")
+    p.add_argument("--animate", action="store_true",
+                   help="after the run, build one MP4 per figure field plus a combined "
+                        "side-by-side panel (MP4+GIF, default fields w/S_w/q_v) from the "
+                        "figures/ snapshots -- requires ffmpeg and PNG snapshots enabled "
+                        "(config output.figures includes 'slices', the default); if it "
+                        "fails, the exact manual commands are printed so it can be redone "
+                        "by hand (scripts/make_anim.py / scripts/make_panel.py)")
     p.add_argument("--periodic", action="store_true",
                    help="periodic lateral (x,y) boundaries: ingest the environmental "
                         "mean wind so vertical shear can tilt/organise the storm "
@@ -131,7 +153,9 @@ def main(argv=None) -> int:
         pressure_gradient=args.pressure_gradient, float32=args.float32,
         dynamics=args.dynamics, tecplot=args.tecplot, periodic=args.periodic,
         kernel_nucleation=args.kernel_nucleation,
-        method=args.method, threads=args.threads)
+        method=args.method, threads=args.threads,
+        device=args.device, compute_threads=args.compute_threads,
+        precision=args.precision, animate=args.animate)
 
     # geometry + memory report (always shown so the run records its geometry)
     print("=== meteorological_flow geometry ===")
@@ -144,6 +168,18 @@ def main(argv=None) -> int:
 
     if args.dry_run:
         return _dry_run(cfg)
+
+    try:
+        compute_backend = get_backend(cfg.performance.device, required_gb=mem)
+    except BackendError as e:
+        print(f"\nERROR [{e.category}]: {e}")
+        return 3
+    except NotImplementedError as e:
+        print(f"\nERROR [not_implemented]: {e}")
+        return 3
+    print(f"=== backend: {compute_backend.name} ({compute_backend.device_info()['label']}) "
+          f"precision={cfg.physics.precision} "
+          f"threads={cfg.performance.compute_threads or 'default'} ===")
 
     import time as _time
     _t0 = _time.perf_counter()
@@ -158,10 +194,58 @@ def main(argv=None) -> int:
               "ETA~%5.1f min" % (step, t, dur, 100 * frac, el, sps, eta_min),
               flush=True)
 
-    sim = Simulation(cfg, restart=args.restart)
-    report = sim.run(progress=_prog)
+    if cfg.performance.compute_threads:
+        from threadpoolctl import threadpool_limits
+        thread_ctx = threadpool_limits(limits=cfg.performance.compute_threads)
+    else:
+        from contextlib import nullcontext
+        thread_ctx = nullcontext()
+    with thread_ctx:
+        sim = Simulation(cfg, restart=args.restart, backend=compute_backend)
+        report = sim.run(progress=_prog)
     _print_report(report)
+    if cfg.output.animate:
+        _maybe_animate(cfg)
     return 0
+
+
+def _maybe_animate(cfg) -> None:
+    """Best-effort post-run animation (--animate): the simulation itself has
+    already completed and been reported by this point, so a failure here
+    (missing ffmpeg, no figures/ snapshots, ...) must never look like the run
+    failed -- print the exact manual commands as a fallback instead."""
+    from . import animate as an
+    outdir = cfg.output.outdir
+    print("\n=== building animations (--animate) ===")
+    try:
+        result = an.animate_run(outdir, panel_fields=an.DEFAULT_PANEL_FIELDS)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"  could not build animations automatically: {e}")
+        print("  run these manually instead:")
+        for cmd in an.manual_commands(outdir):
+            print(f"    {cmd}")
+        return
+
+    print(f"  ffmpeg: {result['ffmpeg']}")
+    failed = []
+    for field, outcome in result["fields"].items():
+        if isinstance(outcome, Exception):
+            failed.append(field)
+        else:
+            print(f"  {field}: {outcome}")
+    panel = result["panel"]
+    if isinstance(panel, Exception):
+        failed.append("panel")
+    elif panel:
+        if panel["mp4"]:
+            print(f"  panel: {panel['mp4']}")
+        if panel["gif"]:
+            print(f"  panel: {panel['gif']}")
+
+    if failed:
+        print(f"  {len(failed)} item(s) failed ({', '.join(failed)}); to redo by hand:")
+        for cmd in an.manual_commands(outdir):
+            print(f"    {cmd}")
 
 
 def _dry_run(cfg) -> int:
@@ -179,6 +263,14 @@ def _dry_run(cfg) -> int:
     print(f"  dt est.  : adv~{dt_adv:.3f}s  diff~{dt_diff:.3f}s  cap={cfg.time.dt_max}s")
     print(f"  rho0     : {rho0:.3f} kg/m3  (T_ref~293K)")
     print(f"  stage    : {cfg.nucleation.stage}  method={cfg.nucleation.method}")
+    mem = cfgmod.estimate_memory_gb(cfg)
+    try:
+        cb = get_backend(cfg.performance.device, required_gb=mem, log=lambda m: None)
+        print(f"  device   : {cb.name} ({cb.device_info()['label']})  "
+              f"precision={cfg.physics.precision}")
+    except (BackendError, NotImplementedError) as e:
+        print(f"  device   : requested={cfg.performance.device}  "
+              f"unavailable ({getattr(e, 'category', 'not_implemented')}): {e}")
     if ntab:
         print(f"  lookup   : {ntab} table points "
               f"(T:{lk.n_T} x pv:{lk.n_pv} x grad:{lk.n_grad} x 2 phases)")

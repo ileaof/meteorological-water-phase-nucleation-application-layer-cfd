@@ -29,13 +29,14 @@ def _save(fig, path):
 
 
 def _field_slice(ax, grid: Grid, arr, axis, mid, title, cmap="viridis"):
+    to_cpu = grid.backend.to_cpu
     a = _slice(arr, axis, mid)
     if axis == "h":
-        X, Y = np.meshgrid(grid.xc, grid.yc, indexing="ij")
+        X, Y = np.meshgrid(to_cpu(grid.xc), to_cpu(grid.yc), indexing="ij")
         im = ax.pcolormesh(X, Y, a, shading="auto", cmap=cmap)
         ax.set_xlabel("x [m]"); ax.set_ylabel("y [m]")
     else:
-        X, Z = np.meshgrid(grid.xc, grid.zc, indexing="ij")
+        X, Z = np.meshgrid(to_cpu(grid.xc), to_cpu(grid.zc), indexing="ij")
         im = ax.pcolormesh(X, Z, a, shading="auto", cmap=cmap)
         ax.set_xlabel("x [m]"); ax.set_ylabel("z [m]")
     ax.set_title(title)
@@ -44,22 +45,28 @@ def _field_slice(ax, grid: Grid, arr, axis, mid, title, cmap="viridis"):
 
 
 def plot_snapshot(state, nf, grid: Grid, outdir: str, t: float, tag: str = "") -> list:
-    """Plot the standard slice suite for one time slice; returns file list."""
+    """Plot the standard slice suite for one time slice; returns file list.
+
+    matplotlib has no CuPy support, so every ``state``-derived array is
+    pulled to the host here, at the plotting boundary; ``nf`` (the
+    nucleation field) is always host/NumPy already."""
     files = []
+    to_cpu = grid.backend.to_cpu
     nz, ny = grid.nz, grid.ny
     midz, midy = nz // 2, ny // 2
-    uc = 0.5 * (state.u[:-1, :, :] + state.u[1:, :, :])
-    vc = 0.5 * (state.v[:, :-1, :] + state.v[:, 1:, :])
-    umag = np.sqrt(uc ** 2 + vc ** 2 + (0.5 * (state.w[:, :, :-1] + state.w[:, :, 1:])) ** 2)
+    uc = to_cpu(0.5 * (state.u[:-1, :, :] + state.u[1:, :, :]))
+    vc = to_cpu(0.5 * (state.v[:, :-1, :] + state.v[:, 1:, :]))
+    wc_full = to_cpu(0.5 * (state.w[:, :, :-1] + state.w[:, :, 1:]))
+    umag = np.sqrt(uc ** 2 + vc ** 2 + wc_full ** 2)
     panels = [
-        ("T", state.T, "viridis", "Temperature [K]"),
-        ("S_w", state.S_w, "BrBG", "S_w (liquid)"),
-        ("S_i", state.S_i, "BrBG", "S_i (ice)"),
-        ("p_prime", state.p, "RdBu_r", "p' [Pa]"),
-        ("gradT", state.gradT_mag, "magma", "|gradT| [K/m]"),
+        ("T", to_cpu(state.T), "viridis", "Temperature [K]"),
+        ("S_w", to_cpu(state.S_w), "BrBG", "S_w (liquid)"),
+        ("S_i", to_cpu(state.S_i), "BrBG", "S_i (ice)"),
+        ("p_prime", to_cpu(state.p), "RdBu_r", "p' [Pa]"),
+        ("gradT", to_cpu(state.gradT_mag), "magma", "|gradT| [K/m]"),
         ("log10I_liq", np.where(np.isfinite(nf.log10I[0]), nf.log10I[0], np.nan), "plasma", "log10 I (liquid)"),
         ("log10I_ice", np.where(np.isfinite(nf.log10I[1]), nf.log10I[1], np.nan), "plasma", "log10 I (ice)"),
-        ("q_v", state.qv * 1000.0, "BuGn", "q_v [g/kg]"),
+        ("q_v", to_cpu(state.qv) * 1000.0, "BuGn", "q_v [g/kg]"),
     ]
     for name, arr, cmap, title in panels:
         fig, (axh, axv) = plt.subplots(1, 2, figsize=(11, 4.5))
@@ -71,7 +78,7 @@ def plot_snapshot(state, nf, grid: Grid, outdir: str, t: float, tag: str = "") -
 
     # velocity magnitude + vectors (horizontal slice)
     fig, ax = plt.subplots(figsize=(6, 5))
-    X, Y = np.meshgrid(grid.xc, grid.yc, indexing="ij")
+    X, Y = np.meshgrid(to_cpu(grid.xc), to_cpu(grid.yc), indexing="ij")
     ax.pcolormesh(X, Y, _slice(umag, "h", midz), shading="auto", cmap="cividis")
     step = max(1, grid.nx // 12)
     uq = np.nan_to_num(_slice(uc, "h", midz)[::step, ::step])
@@ -91,7 +98,7 @@ def plot_snapshot(state, nf, grid: Grid, outdir: str, t: float, tag: str = "") -
 
     # vertical velocity (vertical slice)
     fig, ax = plt.subplots(figsize=(6, 5))
-    wc = 0.5 * (state.w[:, :, :-1] + state.w[:, :, 1:])
+    wc = to_cpu(0.5 * (state.w[:, :, :-1] + state.w[:, :, 1:]))
     _field_slice(ax, grid, wc, "v", midy, f"w [m/s] (y=mid) {tag}", cmap="RdBu_r")
     fig.tight_layout()
     p = os.path.join(outdir, f"w_{tag}.png")

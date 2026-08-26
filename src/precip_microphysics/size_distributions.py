@@ -36,61 +36,61 @@ NC_DEFAULT = 1.0e8    # cloud droplets [m^-3]  (continental, ~100 cm^-3)
 NI_DEFAULT = 1.0e4    # cloud-ice crystals [m^-3]
 
 
-def _mask_small(q):
-    q = np.asarray(q, dtype=float)
-    return np.where(q > C.QSMALL, q, np.nan)
+def _mask_small(q, xp=np):
+    q = xp.asarray(q, dtype=float)
+    return xp.where(q > C.QSMALL, q, xp.nan)
 
 
-def lambda_slope(q, rho_air, category):
+def lambda_slope(q, rho_air, category, xp=np):
     """Exponential slope lambda [1/m] for a precipitating category."""
-    q = _mask_small(q)
+    q = _mask_small(q, xp)
     rho_x = _RHOX[category]
     N0 = _N0[category]
-    return (math.pi * rho_x * N0 / (np.asarray(rho_air, dtype=float) * q)) ** 0.25
+    return (math.pi * rho_x * N0 / (xp.asarray(rho_air, dtype=float) * q)) ** 0.25
 
 
-def number_conc(q, rho_air, category):
+def number_conc(q, rho_air, category, xp=np):
     """Diagnostic number concentration N [m^-3] = N0 / lambda."""
-    lam = lambda_slope(q, rho_air, category)
+    lam = lambda_slope(q, rho_air, category, xp)
     return _N0[category] / lam
 
 
-def characteristic_radius(q, rho_air, category):
+def characteristic_radius(q, rho_air, category, xp=np):
     """Mean-diameter radius r = 1/(2 lambda) [m] (NaN where q ~ 0)."""
-    lam = lambda_slope(q, rho_air, category)
+    lam = lambda_slope(q, rho_air, category, xp)
     return 1.0 / (2.0 * lam)
 
 
-def mass_weighted_vt(q, rho_air, category):
+def mass_weighted_vt(q, rho_air, category, xp=np):
     """Mass-weighted terminal fall speed [m/s] (>=0; 0 where q ~ 0)."""
-    q = np.asarray(q, dtype=float)
-    rho_air = np.asarray(rho_air, dtype=float)
-    lam = lambda_slope(q, rho_air, category)
+    q = xp.asarray(q, dtype=float)
+    rho_air = xp.asarray(rho_air, dtype=float)
+    lam = lambda_slope(q, rho_air, category, xp)
     a, b = _VA[category], _VB[category]
     gratio = math.gamma(4.0 + b) / C.GAMMA4
-    dens_corr = (C.RHO0_VT / np.maximum(rho_air, C.TINY)) ** 0.4
+    dens_corr = (C.RHO0_VT / xp.maximum(rho_air, C.TINY)) ** 0.4
     vt = a * gratio * lam ** (-b) * dens_corr
-    return np.where(q > C.QSMALL, vt, 0.0)
+    return xp.where(q > C.QSMALL, vt, 0.0)
 
 
-def cloud_radius(qc, rho_air, Nc=None):
+def cloud_radius(qc, rho_air, Nc=None, xp=np):
     """Volume-mean cloud-droplet radius [m] from q_c and droplet number."""
-    qc = np.asarray(qc, dtype=float)
-    Nc = NC_DEFAULT if Nc is None else np.asarray(Nc, dtype=float)
-    mass_per_drop = rho_air * qc / np.maximum(Nc, C.TINY)     # kg per drop
+    qc = xp.asarray(qc, dtype=float)
+    Nc = NC_DEFAULT if Nc is None else xp.asarray(Nc, dtype=float)
+    mass_per_drop = rho_air * qc / xp.maximum(Nc, C.TINY)     # kg per drop
     vol = mass_per_drop / C.rho_w
     r = (3.0 * vol / (4.0 * math.pi)) ** (1.0 / 3.0)
-    return np.where(qc > C.QSMALL, r, np.nan)
+    return xp.where(qc > C.QSMALL, r, xp.nan)
 
 
-def ice_radius(qi, rho_air, Ni=None):
+def ice_radius(qi, rho_air, Ni=None, xp=np):
     """Volume-mean cloud-ice radius [m] from q_i and crystal number."""
-    qi = np.asarray(qi, dtype=float)
-    Ni = NI_DEFAULT if Ni is None else np.asarray(Ni, dtype=float)
-    mass_per_crystal = rho_air * qi / np.maximum(Ni, C.TINY)
+    qi = xp.asarray(qi, dtype=float)
+    Ni = NI_DEFAULT if Ni is None else xp.asarray(Ni, dtype=float)
+    mass_per_crystal = rho_air * qi / xp.maximum(Ni, C.TINY)
     vol = mass_per_crystal / C.rho_i
     r = (3.0 * vol / (4.0 * math.pi)) ** (1.0 / 3.0)
-    return np.where(qi > C.QSMALL, r, np.nan)
+    return xp.where(qi > C.QSMALL, r, xp.nan)
 
 
 __all__ = [

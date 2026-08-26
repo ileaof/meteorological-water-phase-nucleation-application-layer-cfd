@@ -27,11 +27,14 @@ classifiers = [
 # numpy/scipy/matplotlib/xarray are REQUIRED: the bundled core imports numpy,
 # scipy and matplotlib at load time, and the meteorological_flow solver writes
 # its NetCDF output via xarray (scipy engine -> NetCDF3, no netCDF4 needed).
+# threadpoolctl controls BLAS/OpenMP thread counts at runtime (--compute-threads)
+# without relying on env vars being set before numpy is imported.
 dependencies = [
     "numpy>=1.20",
     "scipy",
     "matplotlib",
     "xarray",
+    "threadpoolctl",
 ]
 
 [project.optional-dependencies]
@@ -44,6 +47,12 @@ pandas = ["pandas"]
 # Optional JIT acceleration for the per-cell nucleation kernel loop
 # (graceful numpy fallback when numba is absent).
 fast = ["numba"]
+# Optional GPU acceleration for the meteorological_flow solver (--device gpu),
+# via CuPy. Requires an NVIDIA GPU + driver; NEVER required for CPU-only use.
+# cupy-cuda12x targets the CUDA 12.x runtime family (NVIDIA's minor-version
+# compatibility covers newer 12.x/13.x drivers) -- if your CUDA toolkit major
+# version differs, install the matching `cupy-cudaNNx` wheel instead.
+gpu = ["cupy-cuda12x"]
 # All optional I/O backends together.
 io = ["netCDF4", "h5netcdf", "cfgrib", "eccodes", "pandas"]
 # Development & testing.

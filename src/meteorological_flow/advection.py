@@ -15,8 +15,8 @@ from .grid import Grid
 from .state import FlowState
 
 
-def _minmod(a, b):
-    return np.where(a * b <= 0.0, 0.0, np.where(np.abs(a) < np.abs(b), a, b))
+def _minmod(a, b, xp=np):
+    return xp.where(a * b <= 0.0, 0.0, xp.where(xp.abs(a) < xp.abs(b), a, b))
 
 
 def cell_velocity(state: FlowState, grid: Grid):
@@ -29,62 +29,65 @@ def cell_velocity(state: FlowState, grid: Grid):
 
 def _face_flux_x(s, Uf, grid, order):
     """Advective flux Fx = Uf * s_face on x-faces, shape (nx+1,ny,nz)."""
+    xp = grid.xp
     nx = grid.nx
-    F = np.zeros((nx + 1, grid.ny, grid.nz))
+    F = xp.zeros((nx + 1, grid.ny, grid.nz))
     if order == 1:
         # interior faces 1..nx-1
         left = s[:-1, :, :]
         right = s[1:, :, :]
-        sup = np.where(Uf[1:-1, :, :] > 0.0, left, right)
+        sup = xp.where(Uf[1:-1, :, :] > 0.0, left, right)
         F[1:-1, :, :] = Uf[1:-1, :, :] * sup
         # boundary faces: one-sided upwind using edge cell value
         F[0, :, :] = Uf[0, :, :] * s[0, :, :]
         F[-1, :, :] = Uf[-1, :, :] * s[-1, :, :]
     else:
         # MUSCL with minmod
-        sx = _minmod(s[1:, :, :] - s[:-1, :, :], np.zeros_like(s[1:, :, :]))
+        sx = _minmod(s[1:, :, :] - s[:-1, :, :], xp.zeros_like(s[1:, :, :]), xp=xp)
         # left state at interior face i (between i-1 and i): s[i-1]+0.5 slope[i-1]
         sL = s[:-1, :, :] + 0.5 * sx
         sR = s[1:, :, :] - 0.5 * sx
-        F[1:-1, :, :] = Uf[1:-1, :, :] * np.where(Uf[1:-1, :, :] > 0.0, sL, sR)
+        F[1:-1, :, :] = Uf[1:-1, :, :] * xp.where(Uf[1:-1, :, :] > 0.0, sL, sR)
         F[0, :, :] = Uf[0, :, :] * s[0, :, :]
         F[-1, :, :] = Uf[-1, :, :] * s[-1, :, :]
     return F
 
 
 def _face_flux_y(s, Vf, grid, order):
-    F = np.zeros((grid.nx, grid.ny + 1, grid.nz))
+    xp = grid.xp
+    F = xp.zeros((grid.nx, grid.ny + 1, grid.nz))
     if order == 1:
         left = s[:, :-1, :]
         right = s[:, 1:, :]
-        sup = np.where(Vf[:, 1:-1, :] > 0.0, left, right)
+        sup = xp.where(Vf[:, 1:-1, :] > 0.0, left, right)
         F[:, 1:-1, :] = Vf[:, 1:-1, :] * sup
         F[:, 0, :] = Vf[:, 0, :] * s[:, 0, :]
         F[:, -1, :] = Vf[:, -1, :] * s[:, -1, :]
     else:
-        sy = _minmod(s[:, 1:, :] - s[:, :-1, :], np.zeros_like(s[:, 1:, :]))
+        sy = _minmod(s[:, 1:, :] - s[:, :-1, :], xp.zeros_like(s[:, 1:, :]), xp=xp)
         sL = s[:, :-1, :] + 0.5 * sy
         sR = s[:, 1:, :] - 0.5 * sy
-        F[:, 1:-1, :] = Vf[:, 1:-1, :] * np.where(Vf[:, 1:-1, :] > 0.0, sL, sR)
+        F[:, 1:-1, :] = Vf[:, 1:-1, :] * xp.where(Vf[:, 1:-1, :] > 0.0, sL, sR)
         F[:, 0, :] = Vf[:, 0, :] * s[:, 0, :]
         F[:, -1, :] = Vf[:, -1, :] * s[:, -1, :]
     return F
 
 
 def _face_flux_z(s, Wf, grid, order):
-    F = np.zeros((grid.nx, grid.ny, grid.nz + 1))
+    xp = grid.xp
+    F = xp.zeros((grid.nx, grid.ny, grid.nz + 1))
     if order == 1:
         left = s[:, :, :-1]
         right = s[:, :, 1:]
-        sup = np.where(Wf[:, :, 1:-1] > 0.0, left, right)
+        sup = xp.where(Wf[:, :, 1:-1] > 0.0, left, right)
         F[:, :, 1:-1] = Wf[:, :, 1:-1] * sup
         F[:, :, 0] = Wf[:, :, 0] * s[:, :, 0]
         F[:, :, -1] = Wf[:, :, -1] * s[:, :, -1]
     else:
-        sz = _minmod(s[:, :, 1:] - s[:, :, :-1], np.zeros_like(s[:, :, 1:]))
+        sz = _minmod(s[:, :, 1:] - s[:, :, :-1], xp.zeros_like(s[:, :, 1:]), xp=xp)
         sL = s[:, :, :-1] + 0.5 * sz
         sR = s[:, :, 1:] - 0.5 * sz
-        F[:, :, 1:-1] = Wf[:, :, 1:-1] * np.where(Wf[:, :, 1:-1] > 0.0, sL, sR)
+        F[:, :, 1:-1] = Wf[:, :, 1:-1] * xp.where(Wf[:, :, 1:-1] > 0.0, sL, sR)
         F[:, :, 0] = Wf[:, :, 0] * s[:, :, 0]
         F[:, :, -1] = Wf[:, :, -1] * s[:, :, -1]
     return F
@@ -96,16 +99,17 @@ def advect_center(s, Uc, Vc, Wc, grid: Grid, dt: float, order: int = 1) -> np.nd
     Flux-form: ds/dt = -div(F), F = u_face * s_upwind.  Conservative & monotone
     (order 1) under CFL<=1, so positivity of q_v/q_l/q_i is preserved.
     """
+    xp = grid.xp
     # face velocities (simple average of adjacent centres)
-    Uf = np.zeros(grid.u_shape)
+    Uf = xp.zeros(grid.u_shape)
     Uf[1:-1, :, :] = 0.5 * (Uc[:-1, :, :] + Uc[1:, :, :])
     Uf[0, :, :] = Uc[0, :, :]
     Uf[-1, :, :] = Uc[-1, :, :]
-    Vf = np.zeros(grid.v_shape)
+    Vf = xp.zeros(grid.v_shape)
     Vf[:, 1:-1, :] = 0.5 * (Vc[:, :-1, :] + Vc[:, 1:, :])
     Vf[:, 0, :] = Vc[:, 0, :]
     Vf[:, -1, :] = Vc[:, -1, :]
-    Wf = np.zeros(grid.w_shape)
+    Wf = xp.zeros(grid.w_shape)
     Wf[:, :, 1:-1] = 0.5 * (Wc[:, :, :-1] + Wc[:, :, 1:])
     Wf[:, :, 0] = Wc[:, :, 0]
     Wf[:, :, -1] = Wc[:, :, -1]
@@ -141,34 +145,35 @@ def advect_center_massflux(s, uf, vf, wf, grid: Grid, dt: float,
     rho_wf : (nz+1,) reference density on the z-faces.
     order  : 1 (upwind) or 2 (MUSCL/minmod, default).
     """
-    rc = np.asarray(rho_c, dtype=float)[None, None, :]        # (1,1,nz)
-    rwf = np.asarray(rho_wf, dtype=float)[None, None, :]      # (1,1,nz+1)
-    sx = np.empty(grid.u_shape); sy = np.empty(grid.v_shape); sz = np.empty(grid.w_shape)
+    xp = grid.xp
+    rc = xp.asarray(rho_c, dtype=float)[None, None, :]        # (1,1,nz)
+    rwf = xp.asarray(rho_wf, dtype=float)[None, None, :]      # (1,1,nz+1)
+    sx = xp.empty(grid.u_shape); sy = xp.empty(grid.v_shape); sz = xp.empty(grid.w_shape)
     if order >= 2:
         # limited cell slopes (minmod of backward/forward diffs; 0 at edge cells),
         # then upwind-biased reconstruction to the interior faces.
-        dsx = np.zeros_like(s); dsy = np.zeros_like(s); dsz = np.zeros_like(s)
-        dsx[1:-1, :, :] = _minmod(s[1:-1, :, :] - s[:-2, :, :], s[2:, :, :] - s[1:-1, :, :])
-        dsy[:, 1:-1, :] = _minmod(s[:, 1:-1, :] - s[:, :-2, :], s[:, 2:, :] - s[:, 1:-1, :])
-        dsz[:, :, 1:-1] = _minmod(s[:, :, 1:-1] - s[:, :, :-2], s[:, :, 2:] - s[:, :, 1:-1])
-        sx[1:-1, :, :] = np.where(uf[1:-1, :, :] > 0.0,
+        dsx = xp.zeros_like(s); dsy = xp.zeros_like(s); dsz = xp.zeros_like(s)
+        dsx[1:-1, :, :] = _minmod(s[1:-1, :, :] - s[:-2, :, :], s[2:, :, :] - s[1:-1, :, :], xp=xp)
+        dsy[:, 1:-1, :] = _minmod(s[:, 1:-1, :] - s[:, :-2, :], s[:, 2:, :] - s[:, 1:-1, :], xp=xp)
+        dsz[:, :, 1:-1] = _minmod(s[:, :, 1:-1] - s[:, :, :-2], s[:, :, 2:] - s[:, :, 1:-1], xp=xp)
+        sx[1:-1, :, :] = xp.where(uf[1:-1, :, :] > 0.0,
                                   s[:-1, :, :] + 0.5 * dsx[:-1, :, :],
                                   s[1:, :, :] - 0.5 * dsx[1:, :, :])
-        sy[:, 1:-1, :] = np.where(vf[:, 1:-1, :] > 0.0,
+        sy[:, 1:-1, :] = xp.where(vf[:, 1:-1, :] > 0.0,
                                   s[:, :-1, :] + 0.5 * dsy[:, :-1, :],
                                   s[:, 1:, :] - 0.5 * dsy[:, 1:, :])
-        sz[:, :, 1:-1] = np.where(wf[:, :, 1:-1] > 0.0,
+        sz[:, :, 1:-1] = xp.where(wf[:, :, 1:-1] > 0.0,
                                   s[:, :, :-1] + 0.5 * dsz[:, :, :-1],
                                   s[:, :, 1:] - 0.5 * dsz[:, :, 1:])
     else:
-        sx[1:-1, :, :] = np.where(uf[1:-1, :, :] > 0.0, s[:-1, :, :], s[1:, :, :])
-        sy[:, 1:-1, :] = np.where(vf[:, 1:-1, :] > 0.0, s[:, :-1, :], s[:, 1:, :])
-        sz[:, :, 1:-1] = np.where(wf[:, :, 1:-1] > 0.0, s[:, :, :-1], s[:, :, 1:])
+        sx[1:-1, :, :] = xp.where(uf[1:-1, :, :] > 0.0, s[:-1, :, :], s[1:, :, :])
+        sy[:, 1:-1, :] = xp.where(vf[:, 1:-1, :] > 0.0, s[:, :-1, :], s[:, 1:, :])
+        sz[:, :, 1:-1] = xp.where(wf[:, :, 1:-1] > 0.0, s[:, :, :-1], s[:, :, 1:])
     # lateral boundary faces: edge cell value (walls carry u_face=0 -> zero flux),
     # or upwind from the periodic wrap neighbour (face 0 == face nx).
     if getattr(grid, "periodic", False):
-        sx[0, :, :] = np.where(uf[0, :, :] > 0.0, s[-1, :, :], s[0, :, :]); sx[-1, :, :] = sx[0, :, :]
-        sy[:, 0, :] = np.where(vf[:, 0, :] > 0.0, s[:, -1, :], s[:, 0, :]); sy[:, -1, :] = sy[:, 0, :]
+        sx[0, :, :] = xp.where(uf[0, :, :] > 0.0, s[-1, :, :], s[0, :, :]); sx[-1, :, :] = sx[0, :, :]
+        sy[:, 0, :] = xp.where(vf[:, 0, :] > 0.0, s[:, -1, :], s[:, 0, :]); sy[:, -1, :] = sy[:, 0, :]
     else:
         sx[0, :, :] = s[0, :, :]; sx[-1, :, :] = s[-1, :, :]
         sy[:, 0, :] = s[:, 0, :]; sy[:, -1, :] = s[:, -1, :]
@@ -186,6 +191,7 @@ def advect_center_massflux(s, uf, vf, wf, grid: Grid, dt: float,
 
 def advect_momentum(state: FlowState, grid: Grid, dt: float, order: int = 1) -> None:
     """Apply advection tendency to u, v, w in place (v1 center round-trip)."""
+    xp = grid.xp
     Uc, Vc, Wc = cell_velocity(state, grid)
     # advect centre-interpolated velocity components, push tendency back to faces
     for comp_face, comp_name in ((state.u, "u"), (state.v, "v"), (state.w, "w")):
@@ -200,19 +206,19 @@ def advect_momentum(state: FlowState, grid: Grid, dt: float, order: int = 1) -> 
         tend_c = (fc_new - fc) / dt if dt > 0 else 0.0 * fc
         # distribute center tendency back to faces (each face gets avg of nbr cells)
         if comp_name == "u":
-            tend_f = np.zeros(grid.u_shape)
+            tend_f = xp.zeros(grid.u_shape)
             tend_f[1:-1, :, :] = 0.5 * (tend_c[:-1, :, :] + tend_c[1:, :, :])
             tend_f[0, :, :] = tend_c[0, :, :]
             tend_f[-1, :, :] = tend_c[-1, :, :]
             state.u += dt * tend_f
         elif comp_name == "v":
-            tend_f = np.zeros(grid.v_shape)
+            tend_f = xp.zeros(grid.v_shape)
             tend_f[:, 1:-1, :] = 0.5 * (tend_c[:, :-1, :] + tend_c[:, 1:, :])
             tend_f[:, 0, :] = tend_c[:, 0, :]
             tend_f[:, -1, :] = tend_c[:, -1, :]
             state.v += dt * tend_f
         else:
-            tend_f = np.zeros(grid.w_shape)
+            tend_f = xp.zeros(grid.w_shape)
             tend_f[:, :, 1:-1] = 0.5 * (tend_c[:, :, :-1] + tend_c[:, :, 1:])
             tend_f[:, :, 0] = tend_c[:, :, 0]
             tend_f[:, :, -1] = tend_c[:, :, -1]

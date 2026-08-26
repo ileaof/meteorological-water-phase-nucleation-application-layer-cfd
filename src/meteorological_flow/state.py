@@ -52,13 +52,14 @@ class FlowState:
 
     @classmethod
     def zeros(cls, grid: Grid) -> FlowState:
+        xp = grid.xp
         return cls(
             grid=grid,
-            u=np.zeros(grid.u_shape), v=np.zeros(grid.v_shape), w=np.zeros(grid.w_shape),
+            u=xp.zeros(grid.u_shape), v=xp.zeros(grid.v_shape), w=xp.zeros(grid.w_shape),
             p=grid.zeros_c(), theta=grid.zeros_c(),
             qv=grid.zeros_c(), ql=grid.zeros_c(), qi=grid.zeros_c(),
             qr=grid.zeros_c(), qs=grid.zeros_c(), qg=grid.zeros_c(), qh=grid.zeros_c(),
-            surface_precip={c: np.zeros((grid.nx, grid.ny)) for c in ("rain", "snow", "graupel", "hail")},
+            surface_precip={c: xp.zeros((grid.nx, grid.ny)) for c in ("rain", "snow", "graupel", "hail")},
         )
 
     def ensure_hydrometeors(self) -> None:
@@ -69,7 +70,7 @@ class FlowState:
             if getattr(self, name) is None:
                 setattr(self, name, g.zeros_c())
         if self.surface_precip is None:
-            self.surface_precip = {c: np.zeros((g.nx, g.ny))
+            self.surface_precip = {c: g.xp.zeros((g.nx, g.ny))
                                    for c in ("rain", "snow", "graupel", "hail")}
 
     def diagnose(self, cfg: SimulationConfig) -> None:
@@ -79,26 +80,30 @@ class FlowState:
         T = T(theta, P_total); p_v from q_v; S/RH from saturation (engine).
         """
         g = self.grid
+        xp = g.xp
         if self.p0_field is not None:
             P_base = self.p0_field                 # stratified base (deep convection)
         else:
-            P_base = np.full(g.center_shape, cfg.physics.P0, dtype=float)
+            # dtype matches the (possibly float32, under --float32) state array,
+            # not a hardcoded float64 -- otherwise P_base + self.p below would
+            # silently upcast P_total back to float64 even in --float32 mode.
+            P_base = xp.full(g.center_shape, cfg.physics.P0, dtype=self.p.dtype)
         P_total = P_base + self.p
         # defensive positivity guard: the Boussinesq perturbation p' is O(Pa) and
         # should never drive P_total <= 0; if a transient overshoot does, floor it
         # so the theta->T power stays real (and flag it via the clip).
-        P_total = np.where(P_total > 0.0, P_total, P_base)
+        P_total = xp.where(P_total > 0.0, P_total, P_base)
         self.P_total = P_total
         if cfg.physics.theta_transport:
             # theta is defined with P0_REF (100000 Pa) as the reference pressure,
             # NOT the scenario background P0; recover T with the same reference.
-            self.T = th.T_from_theta(self.theta, P_total, th.P0_REF)
+            self.T = th.T_from_theta(self.theta, P_total, th.P0_REF, xp=xp)
         else:
             self.T = self.theta.copy()  # T transported directly
-        self.pv = th.p_v_from_q_v(self.qv, P_total)
-        S_w, S_i, RH_w, RH_i = th.saturation_ratios(self.T, self.pv)
+        self.pv = th.p_v_from_q_v(self.qv, P_total, xp=xp)
+        S_w, S_i, RH_w, RH_i = th.saturation_ratios(self.T, self.pv, xp=xp)
         self.S_w, self.S_i, self.RH_w, self.RH_i = S_w, S_i, RH_w, RH_i
-        self.rho = th.density_moist(P_total, self.T, self.qv)
+        self.rho = th.density_moist(P_total, self.T, self.qv, xp=xp)
         self.gradT_mag = g.grad_magnitude(self.T)
 
     def copy(self) -> FlowState:
@@ -128,7 +133,7 @@ class FlowState:
         uc = 0.5 * (self.u[:-1, :, :] + self.u[1:, :, :])
         vc = 0.5 * (self.v[:, :-1, :] + self.v[:, 1:, :])
         wc = 0.5 * (self.w[:, :, :-1] + self.w[:, :, 1:])
-        return np.sqrt(uc ** 2 + vc ** 2 + wc ** 2)
+        return self.grid.xp.sqrt(uc ** 2 + vc ** 2 + wc ** 2)
 
     def total_water(self) -> float:
         tot = self.qv + self.ql + self.qi

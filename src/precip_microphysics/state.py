@@ -18,7 +18,7 @@ mass loss is booked so conservation can be audited.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import numpy as np
 
@@ -66,59 +66,75 @@ class MicrophysicsState:
     accumulation: dict = field(default_factory=dict)   # mm (liquid-equivalent)
     clip_loss: float = 0.0        # booked mass created/destroyed by clip [kg/kg]
     t: float = 0.0
+    # array module (numpy or cupy); None -> numpy. This package has no Grid/
+    # Backend of its own (see module docstring) -- callers that DO have one
+    # (meteorological_flow.microphysics_coupling.MicrophysicsCoupler) pass
+    # xp=grid.xp explicitly; every other caller (the standalone 0-D column
+    # driver, scenarios.py, existing tests) is unaffected by this default.
+    xp: Any = None
 
     def __post_init__(self) -> None:
+        if self.xp is None:
+            self.xp = np
+        xp = self.xp
         for name in SPECIES:
-            setattr(self, name, np.asarray(getattr(self, name), dtype=float))
+            setattr(self, name, xp.asarray(getattr(self, name), dtype=float))
         for name in ("T", "P", "rho", "w", "dz", "z"):
-            setattr(self, name, np.asarray(getattr(self, name), dtype=float))
+            setattr(self, name, xp.asarray(getattr(self, name), dtype=float))
 
     # ---- shape helpers ----
     @property
     def is_column(self) -> bool:
-        return np.asarray(self.T).ndim >= 1
+        return self.T.ndim >= 1
 
     @property
     def shape(self):
-        return np.asarray(self.T).shape
+        return self.T.shape
 
     # ---- water bookkeeping ----
     def total_water_mixing(self) -> Array:
         """Sum of all seven water mixing ratios [kg/kg] (pointwise)."""
-        return sum(np.asarray(getattr(self, s)) for s in SPECIES)
+        return sum(getattr(self, s) for s in SPECIES)
 
     def water_path(self) -> float:
         """Column-integrated total water mass per unit area [kg/m^2]
         (0-D: mass per unit area over the single layer of thickness dz)."""
         q_t = self.total_water_mixing()
-        col = np.asarray(self.rho) * q_t * np.asarray(self.dz)
-        return float(np.sum(col))
+        col = self.rho * q_t * self.dz
+        return float(self.xp.sum(col))
 
     def condensed_mixing(self) -> Array:
-        return sum(np.asarray(getattr(self, s)) for s in CONDENSED)
+        return sum(getattr(self, s) for s in CONDENSED)
 
     def frozen_mixing(self) -> Array:
-        return sum(np.asarray(getattr(self, s)) for s in FROZEN)
+        return sum(getattr(self, s) for s in FROZEN)
 
     # ---- positivity ----
     def clip(self) -> None:
         """Floor every mixing ratio at zero; book the (tiny) created mass."""
+        xp = self.xp
         created = 0.0
         for s in SPECIES:
-            arr = np.asarray(getattr(self, s))
-            neg = np.minimum(arr, 0.0)
-            created += float(-np.sum(neg))
-            setattr(self, s, np.maximum(arr, 0.0))
+            arr = getattr(self, s)
+            neg = xp.minimum(arr, 0.0)
+            created += float(-xp.sum(neg))
+            setattr(self, s, xp.maximum(arr, 0.0))
         self.clip_loss += created
 
     def copy(self) -> "MicrophysicsState":
         kw = {}
         for f in fields(self):
             v = getattr(self, f.name)
-            if isinstance(v, np.ndarray):
-                kw[f.name] = v.copy()
+            if f.name == "xp":
+                # a module (numpy/cupy), not an array -- numpy/cupy both
+                # happen to expose a top-level `copy()` FUNCTION, so a bare
+                # hasattr(v, "copy") check below would misfire on the module
+                # itself; pass it through unchanged instead.
+                kw[f.name] = v
             elif isinstance(v, dict):
                 kw[f.name] = dict(v)
+            elif hasattr(v, "copy"):
+                kw[f.name] = v.copy()
             else:
                 kw[f.name] = v
         return MicrophysicsState(**kw)

@@ -7,6 +7,7 @@ short coupled run forms condensate and reaches the surface without crashing.
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from meteorological_flow import thermodynamics as th
 from meteorological_flow.cli import build_argparser
@@ -18,10 +19,12 @@ from meteorological_flow.state import FlowState
 
 
 def _supersaturated_state(g, cfg, T=264.0, ss=1.12, w=5.0):
+    xp = g.xp
     st = FlowState.zeros(g)
-    P = np.full(g.center_shape, cfg.physics.P0)
-    st.theta = th.theta_from_T(np.full(g.center_shape, T), P, th.P0_REF)
-    qsat = th.q_v_from_p_v(th.psat_water(np.full(g.center_shape, T)), cfg.physics.P0)
+    P = xp.full(g.center_shape, cfg.physics.P0)
+    st.theta = th.theta_from_T(xp.full(g.center_shape, T), P, th.P0_REF, xp=xp)
+    qsat = th.q_v_from_p_v(th.psat_water(xp.full(g.center_shape, T), xp=xp),
+                           cfg.physics.P0, xp=xp)
     st.qv = qsat * ss
     st.w[:] = w
     st.diagnose(cfg)
@@ -199,3 +202,66 @@ def test_netcdf_axes_correct_for_noncubic_grid():
         assert np.allclose(ds["T"].values[0], np.transpose(fld, (2, 1, 0)))
     finally:
         ds.close()
+
+
+# ---------------------------------------------------------------------------
+# CPU-vs-GPU equivalence for the two-way microphysics coupling (precip_microphysics
+# GPU port). Skipped entirely (not failed) on machines without a working
+# CUDA/CuPy GPU -- same idiom as tests/test_backend_equivalence.py.
+# ---------------------------------------------------------------------------
+def _gpu_available() -> bool:
+    try:
+        import cupy
+        _ = cupy.cuda.Device(0).compute_capability
+        return True
+    except Exception:
+        return False
+
+
+def _run_coupler(device: str, cfg, n_steps=20, dt=3.0):
+    from meteorological_flow.backend import get_backend
+    backend = get_backend(device)
+    g = Grid(nx=6, ny=6, nz=10, Lx=600, Ly=600, Lz=1000, backend=backend)
+    st = _supersaturated_state(g, cfg)
+    co = MicrophysicsCoupler()
+    w0 = st.total_water()   # already a plain Python float on any backend
+    for _ in range(n_steps):
+        co.apply(st, g, dt)
+        co.sediment(st, g, dt)
+        st.diagnose(cfg)
+    return st, g, backend, w0
+
+
+@pytest.mark.skipif(not _gpu_available(), reason="no working CUDA/CuPy GPU in this environment")
+class TestCpuVsGpuMicrophysics:
+    def test_gpu_coupler_stays_finite_and_conserves_water(self):
+        cfg = SimulationConfig()
+        st, g, backend, w0 = _run_coupler("gpu", cfg)
+        assert backend.name == "gpu"
+        to_cpu = backend.to_cpu
+        for name in ("qv", "ql", "qi", "qr", "qs", "qg", "qh"):
+            arr = to_cpu(getattr(st, name))
+            assert np.all(np.isfinite(arr)) and np.all(arr >= 0.0)
+        precip_mass = sum(float(np.sum(to_cpu(v))) for v in st.surface_precip.values()) \
+            * g.dx * g.dy
+        removed = w0 - st.total_water()
+        assert abs(removed - precip_mass) < 1e-6 * max(w0, 1.0)
+
+    def test_cpu_vs_gpu_microphysics_match(self):
+        # Tolerance rationale: same as tests/test_backend_equivalence.py --
+        # the pressure projection differs (CG vs direct for this small grid),
+        # which perturbs the resolved w/updraft the microphysics responds to;
+        # rtol=1e-4 comfortably bounds that while still catching a genuinely
+        # wrong GPU kernel (which would produce O(1) differences, not O(1e-5)).
+        cfg = SimulationConfig()
+        st_cpu, g_cpu, b_cpu, w0_cpu = _run_coupler("cpu", cfg)
+        st_gpu, g_gpu, b_gpu, w0_gpu = _run_coupler("gpu", cfg)
+        assert b_gpu.name == "gpu"
+        for name in ("T", "qv", "ql", "qi", "qr", "qs", "qg", "qh"):
+            a_cpu = b_cpu.to_cpu(getattr(st_cpu, name))
+            a_gpu = b_gpu.to_cpu(getattr(st_gpu, name))
+            np.testing.assert_allclose(a_gpu, a_cpu, rtol=1e-4, atol=1e-9)
+        for cat in st_cpu.surface_precip:
+            p_cpu = float(np.sum(b_cpu.to_cpu(st_cpu.surface_precip[cat])))
+            p_gpu = float(np.sum(b_gpu.to_cpu(st_gpu.surface_precip[cat])))
+            assert p_gpu == pytest.approx(p_cpu, rel=1e-3, abs=1e-9)

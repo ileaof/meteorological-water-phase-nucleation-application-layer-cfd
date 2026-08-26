@@ -34,6 +34,7 @@ from . import diffusion as dif
 from . import io as fio
 from . import plotting as plt_mod
 from . import thermodynamics as th
+from .backend import Backend, get_backend
 from .config import SimulationConfig
 from .grid import Grid
 from .nucleation_adapter import NucleationAdapter, NucleationField
@@ -54,11 +55,12 @@ def _mem_kb():
     return _resource.getrusage(_resource.RUSAGE_SELF).ru_maxrss
 
 
-def _grid_from_config(cfg: SimulationConfig) -> Grid:
+def _grid_from_config(cfg: SimulationConfig, backend: Backend | None = None) -> Grid:
     periodic = getattr(cfg.boundaries, "x_west", None) == "periodic"
     return Grid(nx=cfg.grid.nx, ny=cfg.grid.ny, nz=cfg.grid.nz,
                 Lx=cfg.domain.Lx, Ly=cfg.domain.Ly, Lz=cfg.domain.Lz,
-                z_stretch=getattr(cfg.grid, "z_stretch", 1.0), periodic=periodic)
+                z_stretch=getattr(cfg.grid, "z_stretch", 1.0), periodic=periodic,
+                backend=backend)
 
 
 def _deep_convection_initial(grid: Grid, cfg: SimulationConfig, base=None) -> FlowState:
@@ -73,18 +75,18 @@ def _deep_convection_initial(grid: Grid, cfg: SimulationConfig, base=None) -> Fl
     if base is None:
         base = build_base_state(grid)
     state = FlowState.zeros(grid)
-    theta0 = base.field(base.theta0, grid.center_shape)
-    qv0 = base.field(base.qv0, grid.center_shape)
+    theta0 = base.field(base.theta0, grid.center_shape, xp=grid.xp)
+    qv0 = base.field(base.qv0, grid.center_shape, xp=grid.xp)
     dth, dqv = warm_bubble(grid, dtheta=cfg.physics.bubble_dtheta)
     state.theta = theta0 + dth
-    state.qv = np.maximum(qv0 + dqv, 0.0)
-    state.p0_field = base.field(base.p0, grid.center_shape)
+    state.qv = grid.xp.maximum(qv0 + dqv, 0.0)
+    state.p0_field = base.field(base.p0, grid.center_shape, xp=grid.xp)
     # environmental wind: periodic lateral BCs ingest the mean wind u0(z)/v0(z)
     # (from the sounding shear) so the flow is sheared and the updraft can tilt /
     # organise; the closed-wall storm starts from rest (u0 not advectable there).
     if getattr(grid, "periodic", False):
-        state.u[:] = np.asarray(base.u0, dtype=float)[None, None, :]
-        state.v[:] = np.asarray(base.v0, dtype=float)[None, None, :]
+        state.u[:] = grid.xp.asarray(base.u0, dtype=float)[None, None, :]
+        state.v[:] = grid.xp.asarray(base.v0, dtype=float)[None, None, :]
     bc.apply_velocity_bcs(state, grid, cfg)
     bc.apply_scalar_bcs(state, grid, cfg, theta0=theta0, qv0=qv0)
     state.diagnose(cfg)
@@ -95,9 +97,10 @@ def _deep_convection_initial(grid: Grid, cfg: SimulationConfig, base=None) -> Fl
     # honest trigger is what drives the storm; the old dry bubble relied on the
     # non-conservative scheme spuriously concentrating moisture.)
     if cfg.physics.bubble_dtheta > 0.0:
-        qsat = th.q_v_from_p_v(th.psat_water(state.T), state.P_total)
+        xp = grid.xp
+        qsat = th.q_v_from_p_v(th.psat_water(state.T, xp=xp), state.P_total, xp=xp)
         core = dth > 0.5 * cfg.physics.bubble_dtheta
-        state.qv = np.where(core, np.maximum(state.qv, 0.97 * qsat), state.qv)
+        state.qv = xp.where(core, xp.maximum(state.qv, 0.97 * qsat), state.qv)
         state.diagnose(cfg)
     return state
 
@@ -115,16 +118,17 @@ def _initial_state(grid: Grid, cfg: SimulationConfig, base=None) -> FlowState:
     """
     if cfg.physics.scenario == "deep_convection":
         return _deep_convection_initial(grid, cfg, base)
+    xp = grid.xp
     state = FlowState.zeros(grid)
     th_w, qv_w = bc.inflow_state(cfg.boundaries.warm_inflow, cfg.physics.P0)
     th_c, qv_c = bc.inflow_state(cfg.boundaries.cold_inflow, cfg.physics.P0)
     frac = (grid.xc / grid.Lx).reshape(grid.nx, 1, 1)   # 0 at west, 1 at east
     th_lin = (th_w * (1.0 - frac) + th_c * frac)         # (nx, 1, 1)
     qv_lin = (qv_w * (1.0 - frac) + qv_c * frac)
-    state.theta = np.broadcast_to(th_lin, grid.center_shape).copy()
-    state.qv = np.broadcast_to(qv_lin, grid.center_shape).copy()
-    state.ql = np.zeros(grid.center_shape); state.qi = np.zeros(grid.center_shape)
-    state.u = np.zeros(grid.u_shape); state.v = np.zeros(grid.v_shape); state.w = np.zeros(grid.w_shape)
+    state.theta = xp.broadcast_to(th_lin, grid.center_shape).copy()
+    state.qv = xp.broadcast_to(qv_lin, grid.center_shape).copy()
+    state.ql = xp.zeros(grid.center_shape); state.qi = xp.zeros(grid.center_shape)
+    state.u = xp.zeros(grid.u_shape); state.v = xp.zeros(grid.v_shape); state.w = xp.zeros(grid.w_shape)
     bc.apply_velocity_bcs(state, grid, cfg)
     bc.apply_scalar_bcs(state, grid, cfg)
     state.diagnose(cfg)
@@ -151,9 +155,14 @@ def _build_lookup(cfg: SimulationConfig, outdir: str, adapter: NucleationAdapter
 
 
 class Simulation:
-    def __init__(self, cfg: SimulationConfig, restart: str | None = None, base=None):
+    def __init__(self, cfg: SimulationConfig, restart: str | None = None, base=None,
+                 backend: Backend | None = None):
         self.cfg = cfg
-        self.grid = _grid_from_config(cfg)
+        # compute backend (see backend.py). Defaulting to CPU here means every
+        # existing direct `Simulation(cfg, ...)` call site (tests, scripts)
+        # that doesn't pass backend= is unaffected.
+        self.backend = backend if backend is not None else get_backend("cpu")
+        self.grid = _grid_from_config(cfg, backend=self.backend)
         self.rng = np.random.default_rng(cfg.random_seed)
         # deep-convection base state (stratified sounding) for perturbation buoyancy;
         # an explicit `base` (e.g. Weisman-Klemp or a radiosonde) overrides the default.
@@ -164,12 +173,12 @@ class Simulation:
         if cfg.physics.scenario == "deep_convection":
             from .base_state import build_base_state
             self.base = base if base is not None else build_base_state(self.grid)
-            self.theta0_field = self.base.field(self.base.theta0, self.grid.center_shape)
-            self.qv0_field = self.base.field(self.base.qv0, self.grid.center_shape)
+            self.theta0_field = self.base.field(self.base.theta0, self.grid.center_shape, xp=self.grid.xp)
+            self.qv0_field = self.base.field(self.base.qv0, self.grid.center_shape, xp=self.grid.xp)
         if restart:
             self.state = fio.load_restart(restart, self.grid)
             if self.base is not None and self.state.p0_field is None:
-                self.state.p0_field = self.base.field(self.base.p0, self.grid.center_shape)
+                self.state.p0_field = self.base.field(self.base.p0, self.grid.center_shape, xp=self.grid.xp)
         else:
             self.state = _initial_state(self.grid, cfg, base=self.base)
         if cfg.physics.precision == "float32":
@@ -196,6 +205,7 @@ class Simulation:
         # expansion).  Anelastic needs a stratified reference density profile;
         # use the base state's rho0(z), or build a default hydrostatic one.
         self.dynamics = getattr(cfg.physics, "dynamics", "boussinesq")
+        xp = self.grid.xp
         self.rho0_c = None
         self.rho0_wface = None
         if self.dynamics == "anelastic":
@@ -204,10 +214,15 @@ class Simulation:
             else:
                 from .base_state import build_base_state
                 rho0_prof = np.asarray(build_base_state(self.grid).rho0, dtype=float)
-            self.rho0_c = rho0_prof                                   # (nz,) cell centres
             # rho0 on the z-faces (nz+1); np.interp clamps to the edge values
             # beyond the cell-centre range (constant extrapolation at ground/top).
-            self.rho0_wface = np.interp(self.grid.zf, self.grid.zc, rho0_prof)
+            # These are tiny (nz,)/(nz+1,) profiles built once at init -- np.interp
+            # has no direct GPU equivalent, so this one-time interpolation is done
+            # on the host, then both profiles are moved to the compute backend.
+            rho0_wface_h = np.interp(self.grid.backend.to_cpu(self.grid.zf),
+                                     self.grid.backend.to_cpu(self.grid.zc), rho0_prof)
+            self.rho0_c = xp.asarray(rho0_prof)                       # (nz,) cell centres
+            self.rho0_wface = xp.asarray(rho0_wface_h)
         # conservative scalar transport (M5): the deep_convection scenario advects
         # with the projected divergence-free staggered velocity + reference density
         # (int rho0 q conserved, no wall leak).  Anelastic uses rho0(z); the
@@ -219,8 +234,8 @@ class Simulation:
                 self._transport_rho_c = self.rho0_c
                 self._transport_rho_wf = self.rho0_wface
             else:
-                self._transport_rho_c = np.ones(self.grid.nz)
-                self._transport_rho_wf = np.ones(self.grid.nz + 1)
+                self._transport_rho_c = xp.ones(self.grid.nz)
+                self._transport_rho_wf = xp.ones(self.grid.nz + 1)
         # reference density for the CONSERVATION diagnostics: the anelastic
         # transport conserves int rho0(z) q, so the budgets must weight by rho0(z)
         # too (an unweighted sum drifts as a strong updraft redistributes water
@@ -232,9 +247,9 @@ class Simulation:
         # being damped away, which would defeat the point of ingesting it).
         self._u0_face = self._v0_face = None
         if getattr(self.grid, "periodic", False) and self.base is not None:
-            self._u0_face = np.broadcast_to(np.asarray(self.base.u0, float)[None, None, :],
+            self._u0_face = xp.broadcast_to(xp.asarray(self.base.u0, dtype=float)[None, None, :],
                                             self.grid.u_shape).copy()
-            self._v0_face = np.broadcast_to(np.asarray(self.base.v0, float)[None, None, :],
+            self._v0_face = xp.broadcast_to(xp.asarray(self.base.v0, dtype=float)[None, None, :],
                                             self.grid.v_shape).copy()
         # nucleation (diagnostic, one-way) vs microphysics (two-way coupling)
         self.stage = cfg.nucleation.stage
@@ -268,15 +283,16 @@ class Simulation:
     # ---- CFL (anisotropic, per-axis) ----
     def _dt(self) -> float:
         g = self.grid
+        xp = g.xp
         st = self.state
         # per-component cell-centre velocity maxima -> anisotropic advective CFL
         #   dt_adv = cfl / (|u|/dx + |v|/dy + |w|/dz)
         uc = 0.5 * (st.u[:-1, :, :] + st.u[1:, :, :])
         vc = 0.5 * (st.v[:, :-1, :] + st.v[:, 1:, :])
         wc = 0.5 * (st.w[:, :, :-1] + st.w[:, :, 1:])
-        umax = float(np.abs(uc).max()) if uc.size else 0.0
-        vmax = float(np.abs(vc).max()) if vc.size else 0.0
-        wmax = float(np.abs(wc).max()) if wc.size else 0.0
+        umax = float(xp.abs(uc).max()) if uc.size else 0.0
+        vmax = float(xp.abs(vc).max()) if vc.size else 0.0
+        wmax = float(xp.abs(wc).max()) if wc.size else 0.0
         dzmin = g.dz if not getattr(g, "stretched", False) else float(g.dz_c.min())
         inv_adv = umax / g.dx + vmax / g.dy + wmax / dzmin
         self._inv_adv = inv_adv
@@ -298,6 +314,7 @@ class Simulation:
     def _step(self, dt: float) -> None:
         cfg = self.cfg
         g = self.grid
+        xp = g.xp
         st = self.state
         order = cfg.flow.advection_order
         # 1. BCs + diagnose.  For the stratified base state the scalar z-BCs
@@ -338,9 +355,9 @@ class Simulation:
         # stable under strong buoyant acceleration (documented; only bites at
         # extreme speeds, never in the shallow mixing-chamber reference).
         _VCAP = 120.0
-        np.clip(st.u, -_VCAP, _VCAP, out=st.u)
-        np.clip(st.v, -_VCAP, _VCAP, out=st.v)
-        np.clip(st.w, -_VCAP, _VCAP, out=st.w)
+        xp.clip(st.u, -_VCAP, _VCAP, out=st.u)
+        xp.clip(st.v, -_VCAP, _VCAP, out=st.v)
+        xp.clip(st.w, -_VCAP, _VCAP, out=st.w)
         # 3. project the velocity to divergence-free BEFORE advecting scalars.
         # Flux-form upwind is monotone (bounded) only under a SOLENOIDAL velocity
         # (per-axis CFL<1); advecting with the divergent predictor lets multi-axis
@@ -371,23 +388,23 @@ class Simulation:
         qv_new = _adv(st.qv)
         # positivity of q_v (last-resort clip; bookkeep loss).  Monotone upwind
         # under CFL<=1 should keep q_v>=0, so this rarely bites.
-        clip_loss = float(np.sum(np.minimum(qv_new, 0.0)) * g.cell_vol)
+        clip_loss = float(xp.sum(xp.minimum(qv_new, 0.0)) * g.cell_vol)
         if clip_loss < 0:
             self._last_clip = clip_loss
-        st.qv = np.maximum(qv_new, 0.0)
+        st.qv = xp.maximum(qv_new, 0.0)
         if self.do_microphysics:   # transport cloud + precipitating hydrometeors
             st.ensure_hydrometeors()
-            st.ql = np.maximum(_adv(st.ql), 0.0)
-            st.qi = np.maximum(_adv(st.qi), 0.0)
-            st.qr = np.maximum(_adv(st.qr), 0.0)
-            st.qs = np.maximum(_adv(st.qs), 0.0)
-            st.qg = np.maximum(_adv(st.qg), 0.0)
-            st.qh = np.maximum(_adv(st.qh), 0.0)
+            st.ql = xp.maximum(_adv(st.ql), 0.0)
+            st.qi = xp.maximum(_adv(st.qi), 0.0)
+            st.qr = xp.maximum(_adv(st.qr), 0.0)
+            st.qs = xp.maximum(_adv(st.qs), 0.0)
+            st.qg = xp.maximum(_adv(st.qg), 0.0)
+            st.qh = xp.maximum(_adv(st.qh), 0.0)
         # perturbation-only diffusion vs the stratified reference (deep_convection):
         # diffusing the full curved theta0(z)/qv0(z) would inject spurious buoyancy.
         st.theta = dif.diffuse_center(st.theta, g, cfg.flow.kappa, dt, base=self.theta0_field)
         st.qv = dif.diffuse_center(st.qv, g, cfg.flow.kappa, dt, base=self.qv0_field)
-        st.qv = np.maximum(st.qv, 0.0)
+        st.qv = xp.maximum(st.qv, 0.0)
         # 5. scalar BCs + diagnose (velocity already div-free from step 3)
         bc.apply_scalar_bcs(st, g, cfg, theta0=self.theta0_field, qv0=self.qv0_field)
         bc.apply_velocity_bcs(st, g, cfg)
@@ -414,9 +431,9 @@ class Simulation:
             # a transient numerical overshoot cannot corrupt the saturation
             # curves (documented stability guard; only bites at extreme cells).
             if cfg.physics.scenario == "deep_convection":
-                Tc = np.clip(st.T, 180.0, 335.0)
-                if not np.array_equal(Tc, st.T):
-                    st.theta = th.theta_from_T(Tc, st.P_total, th.P0_REF)
+                Tc = xp.clip(st.T, 180.0, 335.0)
+                if not bool(xp.array_equal(Tc, st.T)):
+                    st.theta = th.theta_from_T(Tc, st.P_total, th.P0_REF, xp=xp)
                     st.diagnose(cfg)
         st.t = self.t + dt
 
@@ -580,6 +597,11 @@ class Simulation:
         report["memory_estimate_gb"] = _mem(cfg)
         report["precision"] = cfg.physics.precision
         report["dynamics"] = self.dynamics
+        report["backend"] = {
+            "name": self.backend.name,
+            "device_label": self.backend.device_info().get("label"),
+            "fallback_reason": self.backend.fallback_reason,
+        }
         # M4 conservation: the (an)elastic mass-continuity residual (should be
         # ~0 -> the projection, not the limiters, enforces the constraint) and the
         # complete water budget (all species + surface accumulation).
@@ -645,6 +667,8 @@ def _cfg_summary(cfg: SimulationConfig) -> dict:
                         "u": cfg.boundaries.cold_inflow.u},
         "nucleation": {"method": cfg.nucleation.method, "stage": cfg.nucleation.stage,
                        "mode": cfg.nucleation.mode, "phase_mode": cfg.nucleation.phase_mode},
+        "performance": {"device": cfg.performance.device,
+                        "compute_threads": cfg.performance.compute_threads},
         "random_seed": cfg.random_seed,
     }
 

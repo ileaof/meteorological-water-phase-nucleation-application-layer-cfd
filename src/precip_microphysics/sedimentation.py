@@ -19,6 +19,8 @@ Accumulation is in mm of liquid water (1 kg m^-2 == 1 mm).
 """
 from __future__ import annotations
 
+import math
+
 import numpy as np
 
 from . import constants as C
@@ -45,25 +47,25 @@ def _sediment_box(q, rho, vt, dz, dt):
     return q, surf_flux, mass_out
 
 
-def _sediment_column(q, rho, dz, cat, dt):
-    """1-D column upwind sedimentation. Returns (q_new, surface_flux, mass_out)."""
-    q = np.array(q, dtype=float)
-    rho = np.asarray(rho, dtype=float)
-    dz = np.asarray(dz, dtype=float) if np.ndim(dz) else np.full_like(q, float(dz))
-    vt = sd.mass_weighted_vt(q, rho, cat)
-    vmax = float(np.max(vt)) if vt.size else 0.0
-    dzmin = float(np.min(dz))
-    n = max(1, int(np.ceil(vmax * dt / max(dzmin, C.TINY))))
+def _sediment_column(q, rho, dz, cat, dt, xp=np):
+    """1-D/N-D column upwind sedimentation. Returns (q_new, surface_flux, mass_out)."""
+    q = xp.array(q, dtype=float)
+    rho = xp.asarray(rho, dtype=float)
+    dz = xp.asarray(dz, dtype=float) if np.ndim(dz) else xp.full_like(q, float(dz))
+    vt = sd.mass_weighted_vt(q, rho, cat, xp)
+    vmax = float(xp.max(vt)) if vt.size else 0.0
+    dzmin = float(xp.min(dz))
+    n = max(1, int(math.ceil(vmax * dt / max(dzmin, C.TINY))))
     dts = dt / n
     mass_out = 0.0
     for _ in range(n):
-        vt = sd.mass_weighted_vt(q, rho, cat)
+        vt = sd.mass_weighted_vt(q, rho, cat, xp)
         F = rho * q * vt                    # downward flux at each cell [kg m^-2 s^-1]
-        F_above = np.empty_like(F)
+        F_above = xp.empty_like(F)
         F_above[:-1] = F[1:]                # flux entering from the cell above
         F_above[-1] = 0.0                   # top: no inflow
         dq = (F_above - F) / (rho * dz) * dts
-        q = np.maximum(q + dq, 0.0)
+        q = xp.maximum(q + dq, 0.0)
         mass_out += float(F[0]) * dts       # domain-bottom (surface) outflux
     surf_flux = mass_out / dt
     return q, surf_flux, mass_out
@@ -72,22 +74,23 @@ def _sediment_column(q, rho, dz, cat, dt):
 def sediment(st, cfg, dt):
     """Apply sedimentation to all precip categories; update surface flux and
     accumulation on the state.  Returns {category: surface_flux_kg_m2_s}."""
+    xp = st.xp
     out = {}
     if not cfg.processes.sedimentation:
         for _, sp in _CATS:
             out[sp] = 0.0
         return out
-    column = np.asarray(st.T).ndim >= 1
+    column = st.T.ndim >= 1
     for cat, sp in _CATS:
         q = getattr(st, sp)
         if column:
-            q_new, surf, mout = _sediment_column(q, st.rho, st.dz, cat, dt)
+            q_new, surf, mout = _sediment_column(q, st.rho, st.dz, cat, dt, xp)
         else:
-            vt = float(sd.mass_weighted_vt(q, st.rho, cat))
+            vt = float(sd.mass_weighted_vt(q, st.rho, cat, xp))
             q_new, surf, mout = _sediment_box(float(q), float(st.rho), vt,
                                               float(st.dz), dt)
-            q_new = np.asarray(q_new, dtype=float)
-        setattr(st, sp, np.asarray(q_new, dtype=float))
+            q_new = xp.asarray(q_new, dtype=float)
+        setattr(st, sp, xp.asarray(q_new, dtype=float))
         st.surface_flux[cat] = surf
         st.accumulation[cat] = st.accumulation.get(cat, 0.0) + mout   # kg/m^2 == mm
         out[cat] = surf

@@ -51,7 +51,7 @@ def buoyancy_w_tendency(state: FlowState, grid: Grid, cfg: SimulationConfig,
         else:
             B = g * dT
     # average cell-centre buoyancy onto z-faces
-    Bf = np.zeros(grid.w_shape)
+    Bf = grid.xp.zeros(grid.w_shape)
     Bf[:, :, 1:-1] = 0.5 * (B[:, :, :-1] + B[:, :, 1:])
     Bf[:, :, 0] = B[:, :, 0]
     Bf[:, :, -1] = B[:, :, -1]

@@ -15,46 +15,53 @@ from .nucleation_adapter import NucleationField
 from .state import FlowState
 
 
-def _centers(state: FlowState) -> dict:
+def _centers(state: FlowState, to_cpu) -> dict:
     """Interpolate staggered velocities to cell centres for output."""
     return {
-        "u": 0.5 * (state.u[:-1, :, :] + state.u[1:, :, :]),
-        "v": 0.5 * (state.v[:, :-1, :] + state.v[:, 1:, :]),
-        "w": 0.5 * (state.w[:, :, :-1] + state.w[:, :, 1:]),
+        "u": to_cpu(0.5 * (state.u[:-1, :, :] + state.u[1:, :, :])),
+        "v": to_cpu(0.5 * (state.v[:, :-1, :] + state.v[:, 1:, :])),
+        "w": to_cpu(0.5 * (state.w[:, :, :-1] + state.w[:, :, 1:])),
     }
 
 
-def _hydro(state: FlowState, name: str) -> np.ndarray:
+def _hydro(state: FlowState, name: str, to_cpu) -> np.ndarray:
     """Precipitating-species field, or zeros if the run does not carry it."""
     a = getattr(state, name, None)
-    return np.asarray(a) if a is not None else np.zeros(state.grid.center_shape)
+    return to_cpu(a) if a is not None else np.zeros(state.grid.center_shape)
 
 
 def snapshot(state: FlowState, nf: NucleationField, t: float, rho0: float) -> dict:
-    """Collect a time-slice of all output fields (cell-centred) as a dict."""
-    c = _centers(state)
+    """Collect a time-slice of all output fields (cell-centred) as a dict.
+
+    ``nf`` (the nucleation field) is always host/NumPy already -- it is
+    produced by the CPU-side lookup/engine layer. ``state``'s fields may be
+    GPU-resident (CuPy); every one is pulled to the host here, at the output
+    boundary, via ``to_cpu`` -- NetCDF/JSON/CSV writers only ever see NumPy.
+    """
+    to_cpu = state.grid.backend.to_cpu
+    c = _centers(state, to_cpu)
     d = {
         "time": float(t),
         "u": c["u"], "v": c["v"], "w": c["w"],
-        "T": state.T, "T_local_liquid": nf.T_local[0], "T_local_ice": nf.T_local[1],
-        "P": state.P_total, "p_v": state.pv,
-        "RH_water": state.RH_w, "RH_ice": state.RH_i,
-        "q_v": state.qv, "q_l": state.ql, "q_i": state.qi,
-        "q_r": _hydro(state, "qr"), "q_s": _hydro(state, "qs"),
-        "q_g": _hydro(state, "qg"), "q_h": _hydro(state, "qh"),
-        "S_w": state.S_w, "S_i": state.S_i,
-        "gradT_mag": state.gradT_mag,
+        "T": to_cpu(state.T), "T_local_liquid": nf.T_local[0], "T_local_ice": nf.T_local[1],
+        "P": to_cpu(state.P_total), "p_v": to_cpu(state.pv),
+        "RH_water": to_cpu(state.RH_w), "RH_ice": to_cpu(state.RH_i),
+        "q_v": to_cpu(state.qv), "q_l": to_cpu(state.ql), "q_i": to_cpu(state.qi),
+        "q_r": _hydro(state, "qr", to_cpu), "q_s": _hydro(state, "qs", to_cpu),
+        "q_g": _hydro(state, "qg", to_cpu), "q_h": _hydro(state, "qh", to_cpu),
+        "S_w": to_cpu(state.S_w), "S_i": to_cpu(state.S_i),
+        "gradT_mag": to_cpu(state.gradT_mag),
         "DeltaT_liquid": nf.Delta_T[0], "DeltaT_ice": nf.Delta_T[1],
         "P_eq_shift_liquid": nf.P_eq_shift[0], "P_eq_shift_ice": nf.P_eq_shift[1],
         "Gamma2_liquid": nf.Gamma2[0], "Gamma2_ice": nf.Gamma2[1],
         "rC_2nd_liquid": nf.rC_2nd[0], "rC_2nd_ice": nf.rC_2nd[1],
         "log10I_liquid": nf.log10I[0], "log10I_ice": nf.log10I[1],
         "dominant_phase": nf.dominant_phase.astype(np.float64),
-        "buoyancy": np.zeros_like(state.T),  # filled by simulation if available
-        "latent_heat_rate": np.zeros_like(state.T),
+        "buoyancy": np.zeros(state.grid.center_shape),  # filled by simulation if available
+        "latent_heat_rate": np.zeros(state.grid.center_shape),
         "solver_residual": np.full(state.grid.center_shape, nf.residual[0].mean() if np.isfinite(nf.residual[0]).any() else 0.0),
         "validity_mask": nf.validity_mask.astype(np.float64),
-        "rho": state.rho,
+        "rho": to_cpu(state.rho),
     }
     return d
 
@@ -148,8 +155,13 @@ def write_tecplot(snapshots: list, path: str, grid: Grid, attrs: dict | None = N
     if not snapshots:
         return path
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    # cell-centre mesh, Fortran-flattened (I=x fastest, then J=y, then K=z)
-    Xg, Yg, Zg = np.meshgrid(grid.xc, grid.yc, grid.zc, indexing="ij")
+    # cell-centre mesh, Fortran-flattened (I=x fastest, then J=y, then K=z).
+    # grid.xc/yc/zc may be GPU-resident; np.meshgrid/np.column_stack (used by
+    # _tecplot_columns below) are host-only, so convert once here -- the
+    # snapshot dicts themselves are already host (see io.snapshot's to_cpu
+    # boundary), this is the one remaining GPU-resident input to this writer.
+    to_cpu = grid.backend.to_cpu
+    Xg, Yg, Zg = np.meshgrid(to_cpu(grid.xc), to_cpu(grid.yc), to_cpu(grid.zc), indexing="ij")
     Xf, Yf, Zf = (a.ravel(order="F") for a in (Xg, Yg, Zg))
     dims = "I=%d J=%d K=%d" % (grid.nx, grid.ny, grid.nz)
     # guard the write so a failure never discards the run's summary/history
@@ -209,15 +221,19 @@ def _csv_cell(v):
 
 def write_restart(state: FlowState, path: str, t: float) -> str:
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    np.savez(path, t=t, u=state.u, v=state.v, w=state.w, p=state.p,
-             theta=state.theta, qv=state.qv, ql=state.ql, qi=state.qi)
+    to_cpu = state.grid.backend.to_cpu
+    np.savez(path, t=t, u=to_cpu(state.u), v=to_cpu(state.v), w=to_cpu(state.w),
+             p=to_cpu(state.p), theta=to_cpu(state.theta), qv=to_cpu(state.qv),
+             ql=to_cpu(state.ql), qi=to_cpu(state.qi))
     return path
 
 
 def load_restart(path: str, grid: Grid) -> FlowState:
     z = np.load(path)
-    st = FlowState(grid=grid, u=z["u"], v=z["v"], w=z["w"], p=z["p"],
-                   theta=z["theta"], qv=z["qv"], ql=z["ql"], qi=z["qi"], t=float(z["t"]))
+    xp = grid.xp
+    st = FlowState(grid=grid, u=xp.asarray(z["u"]), v=xp.asarray(z["v"]), w=xp.asarray(z["w"]),
+                   p=xp.asarray(z["p"]), theta=xp.asarray(z["theta"]), qv=xp.asarray(z["qv"]),
+                   ql=xp.asarray(z["ql"]), qi=xp.asarray(z["qi"]), t=float(z["t"]))
     return st
 
 

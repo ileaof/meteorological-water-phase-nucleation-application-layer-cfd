@@ -10,6 +10,7 @@ import os
 import tempfile
 
 import numpy as np
+import pytest
 
 from meteorological_flow import io as fio
 from meteorological_flow.config import SimulationConfig, apply_overrides
@@ -84,3 +85,36 @@ def test_cli_tecplot_flag_adds_format():
     assert "tecplot" in cfg.output.format
     cfg2 = apply_overrides(SimulationConfig(), storm_scale=True)
     assert "tecplot" not in cfg2.output.format
+
+
+def _gpu_available() -> bool:
+    try:
+        import cupy
+        _ = cupy.cuda.Device(0).compute_capability
+        return True
+    except Exception:
+        return False
+
+
+@pytest.mark.skipif(not _gpu_available(),
+                    reason="no working CUDA/CuPy GPU in this environment")
+def test_tecplot_writes_on_gpu_backed_grid():
+    # regression test for a real bug: write_tecplot built its coordinate mesh
+    # from grid.xc/yc/zc directly (np.meshgrid) without converting a
+    # GPU-resident grid to host first -- np.column_stack (inside
+    # _tecplot_columns) then raised "Only cupy arrays can be column stacked",
+    # silently truncating flow.dat to just its header (caught via a real
+    # --storm-scale --z-stretch ... --tecplot --device auto run).
+    from meteorological_flow.backend import get_backend
+    backend = get_backend("gpu")
+    g = Grid(nx=4, ny=5, nz=6, Lx=4000, Ly=5000, Lz=6000, backend=backend)
+    snaps = [_fake_snapshot(g, t) for t in (0.0, 10.0)]
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "flow.dat")
+        fio.write_tecplot(snaps, p, g)
+        size = os.path.getsize(p)
+        assert size > 1000, "flow.dat was truncated (GPU coordinate conversion regressed)"
+        with open(p, encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    zone_hdrs = [ln for ln in lines if ln.startswith("ZONE")]
+    assert len(zone_hdrs) == 2

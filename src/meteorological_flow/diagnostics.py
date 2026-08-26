@@ -21,10 +21,16 @@ from .state import FlowState
 
 def qualifiers(state: FlowState, nf: NucleationField) -> dict:
     """Return a dict of boolean masks qualifying the local state."""
-    T = state.T
-    Sw, Si = state.S_w, state.S_i
-    ql, qi = state.ql, state.qi
-    wc = vertical_velocity_center(state)
+    # nf (the nucleation field) is always host/NumPy -- it comes from the
+    # engine-wrapping lookup table, which stays CPU-side by design (see
+    # backend.py's module docstring). Pull the (possibly GPU-resident) state
+    # fields to the host here, at the output/diagnostics boundary, so the
+    # rest of this function is plain NumPy exactly as before.
+    to_cpu = state.grid.backend.to_cpu
+    T = to_cpu(state.T)
+    Sw, Si = to_cpu(state.S_w), to_cpu(state.S_i)
+    ql, qi = to_cpu(state.ql), to_cpu(state.qi)
+    wc = to_cpu(vertical_velocity_center(state))
     # nucleation "active" where the respective phase is supersaturated AND a
     # finite kernel rate is reported (supersaturation is the physical gate; the
     # kernel rate is the shifted-equilibrium tendency).
@@ -64,16 +70,16 @@ def surface_water_kg(state: FlowState) -> float:
         return 0.0
     g = state.grid
     area = g.dx * g.dy
-    return float(sum(np.asarray(v).sum() for v in sp.values()) * area)
+    return float(sum(g.xp.asarray(v).sum() for v in sp.values()) * area)
 
 
 def _rho_weight(rho, grid):
     """Density weighting: None/scalar -> as-is; (nz,) profile -> (1,1,nz)."""
     if rho is None:
         return 1.0
-    if np.ndim(rho) == 0:
-        return float(rho)
-    return np.asarray(rho, dtype=float).reshape(1, 1, -1)
+    if np.ndim(rho) == 0:      # true for a plain float/int AND a 0-d GPU array
+        return float(rho)      # (np.ndim reads .ndim, no implicit host copy)
+    return grid.xp.asarray(rho, dtype=float).reshape(1, 1, -1)
 
 
 def _cell_volume(grid):
@@ -114,45 +120,53 @@ def mass_continuity_residual(state: FlowState, rho0_c=None, rho0_wface=None) -> 
     core's continuity constraint (mass conservation), not the limiters.
     """
     g = state.grid
+    xp = g.xp
     dzmin = g.dz if not getattr(g, "stretched", False) else float(g.dz_c.min())
     dz = g.dz if not getattr(g, "stretched", False) else g.dz_c[None, None, :]
     if rho0_c is not None and rho0_wface is not None:
-        rc = np.asarray(rho0_c).reshape(1, 1, -1)
-        rwf = np.asarray(rho0_wface).reshape(1, 1, -1)
+        rc = xp.asarray(rho0_c).reshape(1, 1, -1)
+        rwf = xp.asarray(rho0_wface).reshape(1, 1, -1)
         dudx = (state.u[1:] - state.u[:-1]) / g.dx
         dvdy = (state.v[:, 1:] - state.v[:, :-1]) / g.dy
         wflux = rwf * state.w
         dwdz = (wflux[:, :, 1:] - wflux[:, :, :-1]) / dz
         div = rc * (dudx + dvdy) + dwdz
-        wmax = float(np.max(np.abs(state.w))) if state.w.size else 0.0
-        scale = float(np.max(np.abs(rho0_c))) * wmax / dzmin + 1e-12
+        wmax = float(xp.max(xp.abs(state.w))) if state.w.size else 0.0
+        scale = float(xp.max(xp.abs(rc))) * wmax / dzmin + 1e-12
     else:
         div = g.divergence(state.u, state.v, state.w)
-        umax = float(np.max(np.abs(state.velocity_magnitude_center())))
+        umax = float(xp.max(xp.abs(state.velocity_magnitude_center())))
         scale = umax / min(g.dx, g.dy, dzmin) + 1e-12
     interior = div[1:-1, 1:-1, 1:-1] if min(div.shape) > 2 else div
-    absmax = float(np.max(np.abs(interior))) if interior.size else 0.0
+    absmax = float(xp.max(xp.abs(interior))) if interior.size else 0.0
     return {"abs_max": absmax, "normalised": absmax / scale}
 
 
 def summary_stats(state: FlowState, nf: NucleationField) -> dict:
     """Extrema and aggregate metrics for the JSON report."""
+    xp = state.grid.xp
     umag = state.velocity_magnitude_center()
     wc = vertical_velocity_center(state)
-    liq = nf.log10I[0]; ice = nf.log10I[1]
+    liq = nf.log10I[0]; ice = nf.log10I[1]   # host/NumPy: nucleation stays CPU-side
     liq_f = liq[np.isfinite(liq)] if np.any(np.isfinite(liq)) else np.array([0.0])
     ice_f = ice[np.isfinite(ice)] if np.any(np.isfinite(ice)) else np.array([0.0])
+    # S_w/S_i are pulled to host here since they're combined below with nf's
+    # host-only nucleation-rate masks -- mixing GPU and host arrays directly
+    # is not supported (see backend.py), so this is the explicit conversion
+    # boundary rather than a silent/implicit one.
+    Sw_h = state.grid.backend.to_cpu(state.S_w)
+    Si_h = state.grid.backend.to_cpu(state.S_i)
     return {
-        "T_min": float(np.nanmin(state.T)), "T_max": float(np.nanmax(state.T)),
-        "qv_min": float(np.nanmin(state.qv)), "qv_max": float(np.nanmax(state.qv)),
-        "S_w_max": float(np.nanmax(state.S_w)), "S_i_max": float(np.nanmax(state.S_i)),
-        "S_w_min": float(np.nanmin(state.S_w)),
-        "umax": float(np.nanmax(umag)), "wmax": float(np.nanmax(np.abs(wc))),
-        "gradT_max": float(np.nanmax(state.gradT_mag)),
+        "T_min": float(xp.nanmin(state.T)), "T_max": float(xp.nanmax(state.T)),
+        "qv_min": float(xp.nanmin(state.qv)), "qv_max": float(xp.nanmax(state.qv)),
+        "S_w_max": float(xp.nanmax(state.S_w)), "S_i_max": float(xp.nanmax(state.S_i)),
+        "S_w_min": float(xp.nanmin(state.S_w)),
+        "umax": float(xp.nanmax(umag)), "wmax": float(xp.nanmax(xp.abs(wc))),
+        "gradT_max": float(xp.nanmax(state.gradT_mag)),
         "log10I_liq_max": float(np.nanmax(liq_f)),
         "log10I_ice_max": float(np.nanmax(ice_f)),
-        "n_liq_nucleation_cells": int(np.sum((state.S_w > 1.0) & np.isfinite(liq))),
-        "n_ice_nucleation_cells": int(np.sum((state.S_i > 1.0) & np.isfinite(ice))),
+        "n_liq_nucleation_cells": int(np.sum((Sw_h > 1.0) & np.isfinite(liq))),
+        "n_ice_nucleation_cells": int(np.sum((Si_h > 1.0) & np.isfinite(ice))),
         "total_water_kg": float(state.total_water()),
     }
 
@@ -166,7 +180,7 @@ def _energy_budget(state: FlowState, rho) -> tuple:
     r = _rho_weight(rho, g)
     umag2 = state.velocity_magnitude_center() ** 2          # (nx,ny,nz)
     ke = 0.5 * float((r * umag2 * dv).sum())
-    zc = g.zc.reshape(1, 1, -1) * np.ones(g.center_shape)
+    zc = g.zc.reshape(1, 1, -1) * g.xp.ones(g.center_shape)
     pe = 9.81 * float((r * zc * dv).sum())
     th = 1005.0 * float((r * state.T * dv).sum())
     return ke, pe, th

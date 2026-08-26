@@ -26,7 +26,8 @@ def _interp(zc, z, f):
 def from_arrays(grid, z, T, *, p=None, qv=None, RH=None, Td=None,
                 u=None, v=None, p_sfc=100000.0) -> BaseState:
     """Build a BaseState from sounding arrays (interpolated to grid.zc)."""
-    zc = np.asarray(grid.zc, dtype=float)
+    # deliberately CPU-only (see base_state.py); grid.zc may be GPU-resident.
+    zc = np.asarray(grid.backend.to_cpu(grid.zc), dtype=float)
     nz = zc.size
     T0 = _interp(zc, z, T)
     u0 = _interp(zc, z, u) if u is not None else np.zeros(nz)

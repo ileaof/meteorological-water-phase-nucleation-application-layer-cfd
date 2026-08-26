@@ -1,5 +1,19 @@
 # Water-Phase Nucleation & Flow
 
+## Project at a glance
+
+This open-source atmospheric simulation framework connects
+**thermal-gradient-shifted water nucleation** with **three-dimensional flow**
+and **precipitation microphysics**.
+
+The repository includes reproducible liquid- and ice-phase scenarios,
+NetCDF/CSV/JSON output, conservation and numerical tests, visualization tools,
+and an explicit account of the physical assumptions and limitations. It is
+intended as a **research and verification platform**, not an operational
+weather-forecasting system.
+
+Repository: [meteorological-water-phase-nucleation-application-layer-cfd](https://github.com/ileaof/meteorological-water-phase-nucleation-application-layer-cfd)
+
 **Reference Manual — `met_h2o_nucleation` + `meteorological_flow`**
 
 A unified manual for the Ferreira Eq.39a/39b shifted-equilibrium nucleation
@@ -988,17 +1002,21 @@ meteorological-flow --config configs/cold_dry_vs_warm_moist.yaml --grid-resoluti
 | `--preset NAME` | mesh preset. Chamber: `fast/light/recommended/advanced/convective-column`. Deep-convection storm (imply the storm setup + anelastic core): `storm-quick/storm/storm-refined/storm-fine/storm-hires` (see §25.4) |
 | `--cfl` / `--dt-max S` | CFL target (0,1] / maximum timestep [s] |
 | `--pressure-drop Pa` / `--pressure-gradient Pa/m` | forcing, mutually exclusive (`drop = gradient·Lx`) |
-| `--float32` | store the prognostic state in float32 (performance/memory mode) |
+| `--float32` | store the prognostic state in float32 (performance/memory mode); equivalent to `--precision float32` |
+| `--precision float64\|float32` | numerical precision; `float64` is the scientific default, supersedes `--float32` (see §25.5) |
+| `--device auto\|cpu\|gpu` | compute backend; `auto` (default) uses GPU when available else CPU, `gpu` fails loudly if unavailable (see §25.5) |
+| `--compute-threads N` | BLAS/OpenMP thread cap for the per-step solver (CPU path; distinct from `--threads` below) |
 | `--max-memory-gb G` / `--force` | refuse to run above the memory estimate G / override |
 | `--duration S` | override simulated duration |
 | `--output DIR` | output directory |
 | `--output-interval N` | snapshot + nucleation cadence in steps |
-| `--threads N` | multiprocessing threads for the lookup build |
+| `--threads N` | multiprocessing threads for the OFFLINE nucleation lookup-table build (not the per-step solver; see `--compute-threads`) |
 | `--one-way-coupling` | stage = one_way (diagnostic nucleation) |
 | `--two-way-coupling` / `--hydrometeors` | stage = hydrometeor (two-way microphysics: growth + latent heat + sedimentation) |
 | `--storm-scale` / `--deep-convection` | km-scale deep-convection storm: stratified sounding + warm-bubble trigger + two-way microphysics (demonstration; Boussinesq-stretched) |
 | `--dynamics boussinesq\|anelastic` | dynamical core. `boussinesq` (default, constant density — validated test mode); `anelastic` uses ρ₀(z) with ∇·(ρ₀**u**)=0, capturing deep-column mass expansion (updrafts amplifying with height). Milestone 3. |
-| `--tecplot` | also write `flow.dat`, a Tecplot 360 ASCII file (`ORDERED`/`DATAPACKING=POINT` zones, one per snapshot, grouped by `STRANDID`+`SOLUTIONTIME` for time animation), alongside the NetCDF. Readable by Tecplot 360, py2tec, ParaView. |
+| `--tecplot` | also write `flow.dat`, a Tecplot 360 ASCII file (`ORDERED`/`DATAPACKING=POINT` zones, one per snapshot, grouped by `STRANDID`+`SOLUTIONTIME` for time animation), alongside the NetCDF. Readable by Tecplot 360, py2tec, ParaView. Independent of `--animate` below — use either, or both. |
+| `--animate` | after the run, build one MP4 per figure field plus a combined `w`/`S_w`/`q_v` side-by-side panel (MP4+GIF) from the `figures/` PNG snapshots — see §25.6. Requires ffmpeg; on any failure (no ffmpeg, no figures) the exact manual commands are printed instead of failing the run. |
 | `--kernel-nucleation` | two-way stage: feed the validated 2nd-order kernel rate *J* as the microphysics embryo source (eq39 pathway) instead of CCN/IN activation. Builds/uses the nucleation lookup table (one-time build). Milestone 7. |
 | `--z-stretch R` | vertical grid stretching ratio (`R>1` clusters levels near the surface: dz_k ∝ R^k, finer low / coarser aloft; `1.0`=uniform). Variable-dz projection uses the direct solver. Milestone 8. |
 | `--periodic` | periodic lateral (x,y) boundaries: the environmental mean wind u₀(z) is ingested (and persists via a perturbation-relaxed drag) so vertical shear **tilts/organises** the updraft. Pair with a sheared sounding (`--shear`). Projection and advection wrap in x/y. |
@@ -1109,6 +1127,123 @@ python -m meteorological_flow.cli --preset storm --dynamics boussinesq --Nz 50 -
 python -m meteorological_flow.cli --Lx 1000 --Ly 1000 --Lz 1000 --Nx 50 --Ny 50 --Nz 50 --duration 1200 --cfl 0.4
 python -m meteorological_flow.cli --preset convective-column --pressure-drop 100 --duration 1800
 ```
+
+### 25.5 Device selection: CPU or GPU
+
+The solver runs on CPU by default and optionally on GPU (NVIDIA/CUDA, via
+[CuPy](https://cupy.dev/)), selected with `--device`:
+
+```bash
+python -m meteorological_flow.cli --preset recommended --device auto     # default: GPU if available, else CPU
+python -m meteorological_flow.cli --preset recommended --device cpu --compute-threads 8
+python -m meteorological_flow.cli --preset recommended --device gpu      # fails loudly if no working GPU
+```
+
+- **`auto`** (default) tries to initialise a GPU backend; on any failure
+  (CuPy not installed, no CUDA device, driver mismatch, insufficient VRAM
+  for the requested grid) it logs the reason and runs on CPU instead.
+- **`cpu`** always runs on CPU. `--compute-threads N` caps the BLAS/OpenMP
+  thread count for the per-step solver (via
+  [`threadpoolctl`](https://github.com/joblib/threadpoolctl), applied at
+  runtime — no environment variables to set beforehand). This is distinct
+  from `--threads`, which only sizes the process pool for the one-time,
+  offline nucleation lookup-table build.
+- **`gpu`** requires a working CUDA/CuPy stack and **fails loudly** (a clear,
+  categorized error — missing library / incompatible driver / CUDA
+  unavailable / no GPU detected / insufficient memory) rather than silently
+  falling back to CPU.
+
+**Install the GPU extra** (optional; never required for CPU-only use):
+
+```bash
+pip install "met_water_nucleation[gpu]"        # installs cupy-cuda12x
+```
+
+`cupy-cuda12x` targets the CUDA 12.x runtime family; NVIDIA's minor-version
+driver compatibility covers newer 12.x/13.x drivers, but if your CUDA
+toolkit's major version differs, install the matching `cupy-cudaNNx` wheel
+instead (see the [CuPy install guide](https://docs.cupy.dev/en/stable/install.html)).
+Requires an NVIDIA GPU and a recent driver (check with `nvidia-smi`). Native
+Windows CuPy wheels exist — WSL2/Ubuntu is not required, but is the more
+battle-tested path if the native Windows CUDA toolkit gives you trouble.
+
+**Precision:** `float64` is the scientific default on both backends;
+`--precision float32` (or the older `--float32` flag) is an explicit,
+documented performance/memory opt-in — not enabled implicitly by `--device gpu`.
+
+**When GPU actually helps.** GPU acceleration has a fixed per-step overhead
+(kernel launches, the CG pressure solve's own iteration cost) that a small
+grid can't amortise — measured on this repo's own hardware
+(NVIDIA RTX 4050 Laptop GPU, 6 GB VRAM, vs. an unspecified multi-core CPU;
+`scripts/benchmark_backends.py`, pure flow / no microphysics, 5 s simulated):
+
+| preset | cells | CPU total [s] | GPU total [s] | speedup |
+|---|---|---|---|---|
+| `fast` | 15 625 | 1.16 | 0.92 | 1.3× |
+| `recommended` | 125 000 | 8.06 | 1.92 | 4.2× |
+| `advanced` | 1 000 000 | 193.7 | 18.1 | 10.7× |
+
+At `fast`-sized grids GPU is only a modest win (or can be a wash, depending
+on hardware); the benefit grows sharply with grid size — the CPU path's
+iterative CG cost scales worse than the GPU's, on top of the per-cell math
+increasingly dominating the fixed launch overhead. Run
+`python scripts/benchmark_backends.py` yourself to get numbers for your own
+machine and grid sizes before assuming GPU is faster for a given run.
+
+**GPU-vs-CPU numerics differ slightly, by design.** CuPy has no GPU-native
+direct sparse solver equivalent to SciPy's `splu`, so a non-stretched grid on
+GPU always uses the iterative CG pressure solve (logged once per run), even
+where the CPU path would use the direct solver. This is a real, bounded
+numerical difference (CG's own residual tolerance, `tol=1e-6` by default) —
+the two are different, individually-correct discretisations of the same
+Poisson problem, not a bug. A **stretched grid** (`--z-stretch`) always uses
+the direct solve instead, on both backends — its vertical operator is
+asymmetric under stretching and CG is not guaranteed to converge on it (an
+early build got this wrong and diverged to NaN on a real
+`--z-stretch`+`--device auto` run; now fixed and covered by a regression
+test). See `docs/architecture.md`'s CPU/GPU section for the full
+equivalence-testing methodology and tolerances.
+
+**Two-way microphysics coupling (`--two-way-coupling` / `--storm-scale`'s
+default `hydrometeor` stage) is GPU-accelerated too** — hydrometeor growth,
+latent-heat feedback, and sedimentation all run on GPU via the same `xp`
+pattern as the core solver; see `docs/architecture.md`'s CPU/GPU section for
+how `precip_microphysics` (a standalone package with no dependency on this
+one) threads the array backend through without a `Grid` of its own.
+
+### 25.6 Animations (`--animate`)
+
+```bash
+python -m meteorological_flow.cli --preset storm --duration 900 --animate --output outputs/storm
+```
+
+After the run, builds `<field>_evolution.mp4` for every field with PNG
+snapshots in `figures/` (T, S_w, S_i, q_v, w, gradT, p_prime,
+log10I_liquid/ice, velocity_vectors), plus a combined side-by-side panel
+`storm_panel_w_S_w_q_v.mp4`/`.gif` — the same pair backing the animation
+embedded above (§28.8), generated the same way. Requires `figures/`
+snapshots to exist (`output.figures` includes `"slices"`, the default) and
+ffmpeg somewhere findable (PATH, or a few common extra install locations
+such as a WinGet install); a capable modern ffmpeg (h264 + `palettegen`/
+`paletteuse`) is used automatically when found, with an older/limited build
+(e.g. one bundled with some Tecplot 360 installs — no PNG decoder, no
+libx264) supported as a lower-quality fallback.
+
+**Never fails the run.** If ffmpeg can't be found, or `figures/` has no
+snapshots, the failure is reported and the exact equivalent commands are
+printed so the same animations can be built by hand afterward:
+
+```
+=== building animations (--animate) ===
+  could not build animations automatically: <reason>
+  run these manually instead:
+    python scripts/make_anim.py outputs/storm --fps 6
+    python scripts/make_panel.py outputs/storm --fields w S_w q_v --gif --fps 6
+```
+
+Both scripts also work standalone on any past run's output directory (no
+`--animate` needed at run time) — see their own `--help` for `--fields`,
+`--fps`, `--gif-width`, and an explicit `--ffmpeg PATH` override.
 
 ## 26. Outputs & the verification gate
 

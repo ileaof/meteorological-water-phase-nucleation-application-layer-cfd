@@ -13,8 +13,6 @@ inflow T/RH via :mod:`thermodynamics`; q_l = q_i = 0 at inflows.
 """
 from __future__ import annotations
 
-import numpy as np
-
 from . import thermodynamics as th
 from .config import InflowConfig, SimulationConfig
 from .grid import Grid
@@ -72,7 +70,7 @@ def apply_velocity_bcs(state: FlowState, grid: Grid, cfg: SimulationConfig) -> N
     if b.z_top == "damping_layer":
         nz = grid.nz
         nd = max(2, nz // 10)
-        damp = np.linspace(0.0, 1.0, nd) ** 2
+        damp = grid.xp.linspace(0.0, 1.0, nd) ** 2
         for d, coeff in enumerate(damp):
             state.w[:, :, -1 - d] *= (1.0 - 0.05 * coeff)
 
@@ -126,8 +124,9 @@ def apply_scalar_bcs(state: FlowState, grid: Grid, cfg: SimulationConfig,
         state.theta[:, :, 0] = state.theta[:, :, 1]
         state.theta[:, :, -1] = state.theta[:, :, -2]
     if qv0 is not None:
-        state.qv[:, :, 0] = np.maximum(qv0[:, :, 0] + (state.qv[:, :, 1] - qv0[:, :, 1]), 0.0)
-        state.qv[:, :, -1] = np.maximum(qv0[:, :, -1] + (state.qv[:, :, -2] - qv0[:, :, -2]), 0.0)
+        xp = grid.xp
+        state.qv[:, :, 0] = xp.maximum(qv0[:, :, 0] + (state.qv[:, :, 1] - qv0[:, :, 1]), 0.0)
+        state.qv[:, :, -1] = xp.maximum(qv0[:, :, -1] + (state.qv[:, :, -2] - qv0[:, :, -2]), 0.0)
     else:
         state.qv[:, :, 0] = state.qv[:, :, 1]
         state.qv[:, :, -1] = state.qv[:, :, -2]

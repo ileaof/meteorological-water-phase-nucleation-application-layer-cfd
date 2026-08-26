@@ -51,9 +51,13 @@ class BaseState:
         if self.v0 is None:
             self.v0 = np.zeros(nz)
 
-    def field(self, arr1d, shape):
-        """Broadcast a (nz,) base profile to the (nx,ny,nz) grid."""
-        return np.broadcast_to(np.asarray(arr1d).reshape(1, 1, -1), shape).copy()
+    def field(self, arr1d, shape, xp=np):
+        """Broadcast a (nz,) base profile to the (nx,ny,nz) grid.
+
+        ``xp`` lets the caller request a GPU-resident (CuPy) field; the
+        1-D sounding itself is always built on the host (see module docstring)
+        and transferred once here, since it is tiny (nz elements)."""
+        return xp.broadcast_to(xp.asarray(arr1d).reshape(1, 1, -1), shape).copy()
 
 
 def build_base_state(grid, *, T_sfc=301.0, p_sfc=101325.0, RH_sfc=0.85,
@@ -67,7 +71,11 @@ def build_base_state(grid, *, T_sfc=301.0, p_sfc=101325.0, RH_sfc=0.85,
     shallower than ``z_trop`` (e.g. the 10 km storm) the stratosphere is simply
     out of the domain and the profile is unchanged.
     """
-    zc = np.asarray(grid.zc, dtype=float)
+    # the hydrostatic sounding is a small (nz,) 1-D calculation with scalar
+    # Brent-style fixed-point loops -- deliberately CPU-only regardless of the
+    # grid's backend (see base_state.py's module docstring / docs/architecture.md);
+    # grid.zc may be GPU-resident, so it is pulled to the host here, once.
+    zc = np.asarray(grid.backend.to_cpu(grid.zc), dtype=float)
     nz = zc.size
 
     theta_sfc = float(th.theta_from_T(T_sfc, p_sfc, th.P0_REF))
@@ -110,17 +118,18 @@ def warm_bubble(grid, *, dtheta=2.5, x_c=None, y_c=None, z_c=1500.0,
                 radius=2000.0, z_radius=1500.0, moist_frac=0.0, qv_bump=0.0):
     """Return a (nx,ny,nz) potential-temperature perturbation (and optional
     vapour perturbation) for a Gaussian warm bubble that triggers convection."""
+    xp = grid.xp
     x_c = 0.5 * grid.Lx if x_c is None else x_c
     y_c = 0.5 * grid.Ly if y_c is None else y_c
     X = grid.xc.reshape(-1, 1, 1)
     Y = grid.yc.reshape(1, -1, 1)
     Z = grid.zc.reshape(1, 1, -1)
     r2 = ((X - x_c) / radius) ** 2 + ((Y - y_c) / radius) ** 2 + ((Z - z_c) / z_radius) ** 2
-    amp = np.exp(-r2)
+    amp = xp.exp(-r2)
     dtheta_pert = dtheta * amp
     dqv_pert = qv_bump * amp
-    return np.broadcast_to(dtheta_pert, grid.center_shape).copy(), \
-        np.broadcast_to(dqv_pert, grid.center_shape).copy()
+    return xp.broadcast_to(dtheta_pert, grid.center_shape).copy(), \
+        xp.broadcast_to(dqv_pert, grid.center_shape).copy()
 
 
 def weisman_klemp(grid, *, theta_sfc=300.0, theta_tr=343.0, T_tr=213.0,
@@ -136,7 +145,9 @@ def weisman_klemp(grid, *, theta_sfc=300.0, theta_tr=343.0, T_tr=213.0,
 
     Optional unidirectional shear ``u_shear`` [m/s] ramped over ``u_half`` [m].
     """
-    z = np.asarray(grid.zc, dtype=float)
+    # see build_base_state: this sounding calculation is deliberately
+    # CPU-only; grid.zc may be GPU-resident.
+    z = np.asarray(grid.backend.to_cpu(grid.zc), dtype=float)
     r = np.clip(z / z_tr, 0.0, None)
     theta0 = np.where(z <= z_tr,
                       theta_sfc + (theta_tr - theta_sfc) * r ** 1.25,
